@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#f6f5f1" />
+    <meta name="description" content="记录体重、饮食、饮水与睡眠的个人减脂管理工具" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="轻盈记录" />
+    <title>轻盈记录</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="icons/icon-192.png" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow" id="today-label">TODAY</p>
+          <h1>早上好，<span id="greeting-name">阿宁</span></h1>
+        </div>
+        <button class="profile-trigger" id="profile-trigger" aria-label="切换档案">
+          <span class="avatar avatar-coral" id="profile-avatar">宁</span>
+          <span class="chevron">⌄</span>
+        </button>
+      </header>
+
+      <section class="hero-card">
+        <div class="hero-card__topline">
+          <span class="section-label">当前体重</span>
+          <span class="status-pill" id="weight-trend-status"><span class="status-dot"></span>开始记录</span>
+        </div>
+        <div class="weight-line">
+          <strong id="current-weight">62.4</strong><span>kg</span>
+        </div>
+        <div class="weight-meta">
+          <span>7 天平均 <b id="average-weight">62.8 kg</b></span>
+          <span class="delta" id="weight-delta">↓ 0.4 kg</span>
+        </div>
+        <svg class="sparkline" viewBox="0 0 560 130" role="img" aria-label="近七日体重趋势">
+          <defs>
+            <linearGradient id="line-fill" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0" stop-color="#ea715a" stop-opacity=".20" />
+              <stop offset="1" stop-color="#ea715a" stop-opacity="0" />
+            </linearGradient>
+          </defs>
+          <path class="sparkline-fill" id="sparkline-fill" d="M0 72 L560 72 L560 130 L0 130 Z" />
+          <path class="sparkline-line" id="sparkline-line" d="M0 72 L560 72" />
+          <circle id="sparkline-dot" cx="560" cy="72" r="6" class="sparkline-dot" />
+        </svg>
+        <div class="chart-labels"><span id="chart-start-label">今天</span><span>今天</span></div>
+      </section>
+
+      <section class="quick-section">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">TODAY CHECK-IN</p>
+            <h2>今天记一笔</h2>
+          </div>
+          <span class="completion" id="completion-label">2 / 4 已完成</span>
+        </div>
+        <div class="quick-grid">
+          <button class="quick-card quick-card--weight" data-record="weight">
+            <span class="quick-icon">↕</span>
+            <span><b>体重</b><small id="weight-status">已记录</small></span>
+            <span class="quick-arrow">→</span>
+          </button>
+          <button class="quick-card quick-card--meal" data-record="meal">
+            <span class="quick-icon">◒</span>
+            <span><b>饮食</b><small id="meal-status">午餐待记录</small></span>
+            <span class="quick-arrow">→</span>
+          </button>
+          <button class="quick-card quick-card--water" data-record="water">
+            <span class="quick-icon">◌</span>
+            <span><b>饮水</b><small id="water-status">800 / 1800 ml</small></span>
+            <span class="quick-arrow">→</span>
+          </button>
+          <button class="quick-card quick-card--sleep" data-record="sleep">
+            <span class="quick-icon">☾</span>
+            <span><b>睡眠</b><small id="sleep-status">7 小时 24 分</small></span>
+            <span class="quick-arrow">→</span>
+          </button>
+        </div>
+      </section>
+
+      <section class="nutrition-section">
+        <div class="section-heading section-heading--inline">
+          <div>
+            <p class="eyebrow">TODAY NUTRITION</p>
+            <h2>今日能量汇总</h2>
+          </div>
+          <span class="nutrition-meals" id="nutrition-meals">尚未记录</span>
+        </div>
+        <div class="nutrition-overview">
+          <div class="nutrition-total">
+            <span>今日摄入估算</span>
+            <strong id="nutrition-calories">0</strong>
+            <small>kcal</small>
+          </div>
+          <div class="nutrition-breakdown">
+            <div class="daily-macro-bar" aria-label="今日三大营养素供能占比">
+              <i id="daily-carbs-bar"></i><i id="daily-protein-bar"></i><i id="daily-fat-bar"></i>
+            </div>
+            <div class="daily-macro-list">
+              <div><span><i class="dot dot-carbs"></i>碳水</span><b id="daily-carbs-value">0 g · 0%</b><em id="daily-carbs-status">待记录</em></div>
+              <div><span><i class="dot dot-protein"></i>蛋白质</span><b id="daily-protein-value">0 g · 0%</b><em id="daily-protein-status">待记录</em></div>
+              <div><span><i class="dot dot-fat"></i>脂肪</span><b id="daily-fat-value">0 g · 0%</b><em id="daily-fat-status">待记录</em></div>
+            </div>
+          </div>
+        </div>
+        <p class="macro-reference">减脂结构参考：碳水 40%～55% · 蛋白质 20%～30% · 脂肪 25%～35%</p>
+        <div class="calorie-plan" id="calorie-plan">
+          <div><span>今日建议摄入</span><strong id="calorie-target">待计算</strong></div>
+          <div><span>当前剩余额度</span><strong id="calorie-remaining">完善档案</strong></div>
+          <button type="button" id="complete-calorie-profile">完善资料</button>
+          <div class="calorie-progress"><i id="calorie-progress-bar"></i></div>
+          <p id="calorie-plan-note">需要身高、年龄、性别和活动水平才能计算。</p>
+        </div>
+        <p class="nutrition-empty" id="nutrition-empty">记录具体食物后，这里会汇总当天所有餐次。</p>
+      </section>
+
+      <section class="advice-section">
+        <div class="section-heading section-heading--inline">
+          <div>
+            <p class="eyebrow">SMALL NEXT STEP</p>
+            <h2>今天的建议</h2>
+          </div>
+          <button class="text-button" id="refresh-advice">换一条</button>
+        </div>
+        <article class="advice-card">
+          <div class="advice-mark">01</div>
+          <div class="advice-copy">
+            <h3 id="advice-title">午餐补一份蛋白质</h3>
+            <p id="advice-body">今天早餐记录显示蛋白质偏少，午餐可以加一份鸡蛋、鱼肉或豆制品，让下午更稳定。</p>
+            <span class="source-note">基于：早餐记录 · 最近 3 天饱腹感</span>
+          </div>
+          <button class="advice-done" id="advice-done" aria-label="完成建议">✓</button>
+        </article>
+      </section>
+
+      <section class="week-section">
+        <div class="section-heading section-heading--inline">
+          <div>
+            <p class="eyebrow">WEEKLY SNAPSHOT</p>
+            <h2>这周状态</h2>
+          </div>
+          <button class="text-button" data-tab="trend">看趋势 →</button>
+        </div>
+        <div class="snapshot-grid">
+          <div class="snapshot-card"><span class="snapshot-icon snapshot-icon--mint">◒</span><strong id="weekly-meals">0 / 7</strong><small>饮食有记录</small></div>
+          <div class="snapshot-card"><span class="snapshot-icon snapshot-icon--blue">◌</span><strong id="weekly-water">0%</strong><small>饮水完成度</small></div>
+          <div class="snapshot-card"><span class="snapshot-icon snapshot-icon--yellow">☾</span><strong id="weekly-sleep">--</strong><small>平均睡眠</small></div>
+        </div>
+      </section>
+
+      <nav class="bottom-nav" aria-label="主导航">
+        <button class="nav-item is-active" data-tab="home"><span>⌂</span><small>今日</small></button>
+        <button class="nav-item" data-tab="records"><span>＋</span><small>记录</small></button>
+        <button class="nav-item" data-tab="trend"><span>⌁</span><small>趋势</small></button>
+        <button class="nav-item" data-tab="profile"><span>○</span><small>我的</small></button>
+      </nav>
+    </main>
+
+    <div class="modal-backdrop" id="modal-backdrop" hidden>
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-handle"></div>
+        <div class="modal-header"><div><p class="eyebrow" id="modal-kicker">QUICK RECORD</p><h2 id="modal-title">记录体重</h2></div><button class="close-button" id="modal-close">×</button></div>
+        <div id="modal-content"></div>
+      </section>
+    </div>
+
+    <div class="toast" id="toast" role="status"></div>
+    <script src="app.js"></script>
+  </body>
+</html>

@@ -205,6 +205,7 @@ function renderHome() {
   renderGoalAdvice();
   renderWeightTrend();
   renderWeeklySnapshot();
+  if (currentView === "records") renderRecords();
   if (currentView === "trend") renderTrend();
 }
 
@@ -264,6 +265,57 @@ function renderWeeklySnapshot() {
   document.querySelector("#weekly-meals").textContent = `${mealDays} / ${eligibleDates.length || 1}`;
   document.querySelector("#weekly-water").textContent = `${waterPercent}%`;
   document.querySelector("#weekly-sleep").textContent = averageSleep ? `${Math.floor(averageSleep)}h ${Math.round((averageSleep % 1) * 60)}m` : "--";
+}
+
+function escapeHtml(value) {
+  const entities = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+  return String(value || "").replace(/[&<>"']/g, (character) => entities[character]);
+}
+
+function recordTime(value) {
+  if (!value) return "已记录";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "已记录";
+  return new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(date);
+}
+
+function renderRecords() {
+  const record = activeRecord();
+  if (!record) return;
+  const date = new Date();
+  document.querySelector("#records-date-label").textContent = `${date.getMonth() + 1} 月 ${date.getDate()} 日已添加的全部内容`;
+  document.querySelector("#records-weight").innerHTML = record.weightRecorded
+    ? `<div class="record-simple"><div><span>今日体重</span><strong>${Number(record.weight).toFixed(1)} kg</strong></div><small>7 天平均 ${Number(record.average).toFixed(1)} kg</small></div>`
+    : `<div class="records-empty">今天还没有记录体重</div>`;
+
+  const meals = record.mealRecords || [];
+  document.querySelector("#records-meals").innerHTML = meals.length ? meals.map((meal, index) => {
+    const summary = meal.summary || macroSummary(meal.foods || []);
+    const foods = (meal.foods || []).map((food) => `${escapeHtml(food.name)} ×${Number(food.quantity || 1)}`).join("、");
+    return `<article class="record-item"><div class="record-item-head"><div><strong>${escapeHtml(meal.mealTime || "一餐")}</strong><span> · ${recordTime(meal.createdAt)}</span></div><button class="record-delete" type="button" data-delete-meal="${index}" aria-label="删除${escapeHtml(meal.mealTime || "这餐")}">×</button></div><p class="record-item-main">${foods || "未保存食物明细"}</p><p class="record-item-meta">${summary.calories} kcal · 碳水 ${summary.carbsPercent}% · 蛋白质 ${summary.proteinPercent}% · 脂肪 ${summary.fatPercent}%</p></article>`;
+  }).join("") : `<div class="records-empty">今天还没有饮食记录</div>`;
+
+  const waterLogs = record.waterLogs || [];
+  document.querySelector("#records-water").innerHTML = waterLogs.length ? waterLogs.map((log, index) => `<article class="record-item"><div class="record-item-head"><div><strong>${escapeHtml(log.name || "饮品")}</strong><span> · ${recordTime(log.createdAt)}</span></div><button class="record-delete" type="button" data-delete-water="${index}" aria-label="删除这笔饮水">×</button></div><p class="record-item-main">${Number(log.amount)} ml</p><p class="record-item-meta">${log.counts ? "已计入今日饮水目标" : "不计入今日饮水目标"}</p></article>`).join("")
+    : Number(record.water) > 0 ? `<div class="record-simple"><div><span>历史汇总</span><strong>${Number(record.water)} ml</strong></div><small>早期版本未保存单笔明细</small></div>`
+      : `<div class="records-empty">今天还没有饮水记录</div>`;
+
+  document.querySelector("#records-sleep").innerHTML = record.sleep
+    ? `<div class="record-simple"><div><span>睡眠时长</span><strong>${escapeHtml(record.sleep)}</strong></div><small>可点击修改重新记录</small></div>`
+    : `<div class="records-empty">今天还没有睡眠记录</div>`;
+
+  document.querySelectorAll("[data-delete-meal]").forEach((button) => button.addEventListener("click", () => {
+    if (!window.confirm("确定删除这条饮食记录吗？")) return;
+    meals.splice(Number(button.dataset.deleteMeal), 1);
+    record.meal = meals.length > 0;
+    saveState(); renderHome(); showToast("饮食记录已删除");
+  }));
+  document.querySelectorAll("[data-delete-water]").forEach((button) => button.addEventListener("click", () => {
+    if (!window.confirm("确定删除这笔饮水吗？")) return;
+    const [removed] = waterLogs.splice(Number(button.dataset.deleteWater), 1);
+    if (removed?.counts) record.water = Math.max(0, Number(record.water) - Number(removed.amount));
+    saveState(); renderHome(); showToast("饮水记录已删除");
+  }));
 }
 
 function periodDates(days) {
@@ -986,8 +1038,10 @@ function showAppView(view) {
   if (!activeProfile()) return openCreateProfile();
   currentView = view;
   document.querySelector("#home-view").hidden = view !== "home";
+  document.querySelector("#records-view").hidden = view !== "records";
   document.querySelector("#trend-view").hidden = view !== "trend";
   setNavigation(view);
+  if (view === "records") renderRecords();
   if (view === "trend") renderTrend();
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
@@ -1037,11 +1091,11 @@ document.querySelector("#complete-calorie-profile").addEventListener("click", ()
 document.querySelector("#advice-done").addEventListener("click", (event) => { event.currentTarget.classList.toggle("is-done"); showToast(event.currentTarget.classList.contains("is-done") ? "建议已完成" : "已恢复待办"); });
 document.querySelectorAll("[data-tab]").forEach((button) => button.addEventListener("click", () => {
   const tab = button.dataset.tab;
-  if (tab === "home" || tab === "trend") return showAppView(tab);
+  if (tab === "home" || tab === "records" || tab === "trend") return showAppView(tab);
   setNavigation(tab);
-  if (tab === "records") openModal("meal");
   if (tab === "profile") openProfiles();
 }));
+document.querySelectorAll("[data-add-record]").forEach((button) => button.addEventListener("click", () => openModal(button.dataset.addRecord)));
 document.querySelectorAll("[data-trend-range]").forEach((button) => button.addEventListener("click", () => {
   trendRange = Number(button.dataset.trendRange);
   renderTrend();

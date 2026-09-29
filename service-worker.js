@@ -1,9 +1,9 @@
-const CACHE_NAME = "light-record-v7";
+const CACHE_NAME = "light-record-v8";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=6",
-  "./app.js?v=6",
+  "./styles.css?v=8",
+  "./app.js?v=8",
   "./manifest.webmanifest?v=7",
   "./icons/icon-192.png",
   "./icons/icon-512.png"

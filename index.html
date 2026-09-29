@@ -11,7 +11,7 @@
     <title>sherry的掉秤日记</title>
     <link rel="manifest" href="manifest.webmanifest?v=7" />
     <link rel="apple-touch-icon" href="icons/icon-192.png" />
-    <link rel="stylesheet" href="styles.css?v=6" />
+    <link rel="stylesheet" href="styles.css?v=8" />
   </head>
   <body>
     <section class="app-lock" id="app-lock" aria-labelledby="lock-title">
@@ -173,6 +173,37 @@
       </section>
       </div>
 
+      <section class="records-view" id="records-view" hidden>
+        <div class="records-heading">
+          <p class="eyebrow">DAILY LOG</p>
+          <h2>今日记录</h2>
+          <p id="records-date-label">查看今天已添加的全部内容</p>
+        </div>
+        <div class="records-actions" aria-label="快速添加记录">
+          <button type="button" data-add-record="weight"><span>↕</span><b>体重</b></button>
+          <button type="button" data-add-record="meal"><span>◒</span><b>饮食</b></button>
+          <button type="button" data-add-record="water"><span>◌</span><b>饮水</b></button>
+          <button type="button" data-add-record="sleep"><span>☾</span><b>睡眠</b></button>
+        </div>
+
+        <section class="record-section">
+          <div class="record-section-heading"><div><span class="record-type-icon record-type-icon--weight">↕</span><h3>体重</h3></div><button type="button" data-add-record="weight">修改</button></div>
+          <div id="records-weight"></div>
+        </section>
+        <section class="record-section">
+          <div class="record-section-heading"><div><span class="record-type-icon record-type-icon--meal">◒</span><h3>饮食</h3></div><button type="button" data-add-record="meal">＋ 添加一餐</button></div>
+          <div class="record-list" id="records-meals"></div>
+        </section>
+        <section class="record-section">
+          <div class="record-section-heading"><div><span class="record-type-icon record-type-icon--water">◌</span><h3>饮水</h3></div><button type="button" data-add-record="water">＋ 添加饮水</button></div>
+          <div class="record-list" id="records-water"></div>
+        </section>
+        <section class="record-section">
+          <div class="record-section-heading"><div><span class="record-type-icon record-type-icon--sleep">☾</span><h3>睡眠</h3></div><button type="button" data-add-record="sleep">修改</button></div>
+          <div id="records-sleep"></div>
+        </section>
+      </section>
+
       <section class="trend-view" id="trend-view" hidden>
         <div class="trend-heading">
           <div>
@@ -260,6 +291,6 @@
     </div>
 
     <div class="toast" id="toast" role="status"></div>
-    <script src="app.js?v=6"></script>
+    <script src="app.js?v=8"></script>
   </body>
 </html>

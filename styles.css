@@ -210,6 +210,8 @@ h3 { margin-bottom: 8px; font-size: 16px; line-height: 1.3; }
 .backup-actions { display: grid; grid-template-columns: 1fr 1.5fr; gap: 9px; margin-top: 16px; }
 .backup-actions .primary-button { width: auto; }
 .install-guide ol { margin: 0; padding-left: 22px; color: #5f6862; font-size: 12px; line-height: 2; }
+.first-use-restore { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; color: var(--muted); font-size: 10px; }
+.first-use-restore .secondary-button { flex: 0 0 auto; }
 .toast { position: fixed; z-index: 20; left: 50%; bottom: 92px; transform: translate(-50%, 15px); padding: 10px 14px; border-radius: 7px; background: #252927; color: #fff; font-size: 12px; opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; white-space: nowrap; }
 .toast.is-visible { transform: translate(-50%, 0); opacity: 1; }
 @keyframes slide-up { from { transform: translateY(40px); opacity: .5; } to { transform: translateY(0); opacity: 1; } }

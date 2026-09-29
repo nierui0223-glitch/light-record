@@ -833,7 +833,7 @@ function openProfiles() {
   document.querySelector("#modal-title").textContent = "切换档案";
   document.querySelector("#modal-kicker").textContent = "LOCAL PROFILES";
   const backupText = state.lastBackupAt ? `上次备份：${new Date(state.lastBackupAt).toLocaleDateString("zh-CN")}` : "尚未备份，建议每周导出一次";
-  document.querySelector("#modal-content").innerHTML = `<div class="goal-summary"><span><small>当前目标</small><strong>${current.targetWeight} kg · ${current.planWeeks} 周计划</strong></span><button type="button" id="edit-goal">调整</button></div><div class="personal-settings"><button type="button" id="choose-avatar"><span class="personal-preview avatar-preview ${current.avatarData ? "has-image" : ""}" ${current.avatarData ? `style="background-image:url(${current.avatarData})"` : ""}>${current.avatarData ? "" : current.initial}</span><b>更换头像</b><small>方形图片效果最佳</small></button><button type="button" id="choose-dashboard"><span class="personal-preview dashboard-preview ${current.dashboardBackground ? "has-image" : ""}" ${current.dashboardBackground ? `style="background-image:url(${current.dashboardBackground})"` : ""}>▣</span><b>看板背景</b><small>横向图片效果最佳</small></button><input id="avatar-file" type="file" accept="image/*" hidden /><input id="dashboard-file" type="file" accept="image/*" hidden /></div><div class="profile-list">${state.profiles.map((profile) => `<button class="profile-item ${profile.id === state.activeProfile ? "is-current" : ""}" data-profile="${profile.id}"><span class="avatar avatar-${profile.color === "mint" ? "mint" : "coral"} ${profile.avatarData ? "has-image" : ""}" ${profile.avatarData ? `style="background-image:url(${profile.avatarData})"` : ""}>${profile.avatarData ? "" : profile.initial}</span><span><strong>${profile.name}</strong><small>${profile.id === state.activeProfile ? "当前档案" : "本机独立数据"}</small></span><span class="profile-lock">⌑</span></button>`).join("")}</div><button class="primary-button" id="add-profile">＋ 新建本地档案</button><section class="data-tools"><div><b>数据与设备</b><small>${backupText}</small></div><div class="data-tool-grid"><button type="button" id="install-app">安装到手机</button><button type="button" id="export-backup">导出备份</button><button type="button" id="import-backup">恢复备份</button>${isLocalPreview() ? `<button type="button" id="migrate-live">迁移到正式版</button>` : ""}</div><p>备份包含所有档案、记录、头像和背景图，请妥善保管。</p><input id="backup-file" type="file" accept="application/json,.json" hidden /></section>`;
+  document.querySelector("#modal-content").innerHTML = `<div class="goal-summary"><span><small>当前目标</small><strong>${current.targetWeight} kg · ${current.planWeeks} 周计划</strong></span><button type="button" id="edit-goal">调整</button></div><div class="personal-settings"><button type="button" id="choose-avatar"><span class="personal-preview avatar-preview ${current.avatarData ? "has-image" : ""}" ${current.avatarData ? `style="background-image:url(${current.avatarData})"` : ""}>${current.avatarData ? "" : current.initial}</span><b>更换头像</b><small>方形图片效果最佳</small></button><button type="button" id="choose-dashboard"><span class="personal-preview dashboard-preview ${current.dashboardBackground ? "has-image" : ""}" ${current.dashboardBackground ? `style="background-image:url(${current.dashboardBackground})"` : ""}>▣</span><b>看板背景</b><small>横向图片效果最佳</small></button><input id="avatar-file" type="file" accept="image/*" hidden /><input id="dashboard-file" type="file" accept="image/*" hidden /></div><div class="profile-list">${state.profiles.map((profile) => `<button class="profile-item ${profile.id === state.activeProfile ? "is-current" : ""}" data-profile="${profile.id}"><span class="avatar avatar-${profile.color === "mint" ? "mint" : "coral"} ${profile.avatarData ? "has-image" : ""}" ${profile.avatarData ? `style="background-image:url(${profile.avatarData})"` : ""}>${profile.avatarData ? "" : profile.initial}</span><span><strong>${profile.name}</strong><small>${profile.id === state.activeProfile ? "当前档案" : "本机独立数据"}</small></span><span class="profile-lock">⌑</span></button>`).join("")}</div><button class="primary-button" id="add-profile">＋ 新建本地档案</button><section class="data-tools"><div><b>数据与设备</b><small>${backupText}</small></div><div class="data-tool-grid"><button type="button" id="change-pin">修改访问密码</button><button type="button" id="install-app">安装到手机</button><button type="button" id="export-backup">导出备份</button><button type="button" id="import-backup">恢复备份</button>${isLocalPreview() ? `<button type="button" id="migrate-live">迁移到正式版</button>` : ""}</div><p>备份包含所有档案、记录、头像和背景图，请妥善保管。</p><input id="backup-file" type="file" accept="application/json,.json" hidden /></section>`;
   modal.hidden = false;
   document.querySelectorAll("[data-profile]").forEach((button) => button.addEventListener("click", () => {
     const selected = state.profiles.find((profile) => profile.id === button.dataset.profile);
@@ -858,6 +858,7 @@ function openProfiles() {
   });
   document.querySelector("#edit-goal").addEventListener("click", openGoalEditor);
   document.querySelector("#add-profile").addEventListener("click", openCreateProfile);
+  document.querySelector("#change-pin").addEventListener("click", openPinEditor);
   document.querySelector("#install-app").addEventListener("click", installApp);
   document.querySelector("#export-backup").addEventListener("click", exportBackup);
   document.querySelector("#import-backup").addEventListener("click", () => document.querySelector("#backup-file").click());
@@ -912,6 +913,28 @@ function openGoalEditor() {
     profile.startedAt = new Date().toISOString().slice(0, 10);
     currentAdvice = 0;
     saveState(); renderHome(); closeModal(); showToast("目标已更新，今日建议已重新生成");
+  });
+}
+
+function openPinEditor() {
+  const profile = activeProfile();
+  if (!profile) return;
+  document.querySelector("#modal-title").textContent = "修改访问密码";
+  document.querySelector("#modal-kicker").textContent = "PRIVACY LOCK";
+  document.querySelector("#modal-content").innerHTML = `<div class="goal-explainer">密码仅用于保护当前设备上的“${profile.name}”档案，请记住新密码。</div><div class="field"><label>当前密码</label><input id="current-pin" type="password" inputmode="numeric" maxlength="6" autocomplete="current-password" placeholder="输入当前 4～6 位密码" /></div><div class="field"><label>新密码</label><input id="new-pin" type="password" inputmode="numeric" maxlength="6" autocomplete="new-password" placeholder="输入新的 4～6 位数字" /></div><div class="field"><label>再次输入新密码</label><input id="confirm-pin" type="password" inputmode="numeric" maxlength="6" autocomplete="new-password" placeholder="再输入一次" /></div><button class="primary-button" type="button" id="save-pin">保存新密码</button>`;
+  document.querySelector("#current-pin").focus();
+  document.querySelector("#save-pin").addEventListener("click", () => {
+    const currentPin = document.querySelector("#current-pin").value.trim();
+    const newPin = document.querySelector("#new-pin").value.trim();
+    const confirmPin = document.querySelector("#confirm-pin").value.trim();
+    if (currentPin !== profile.pin) return showToast("当前密码不正确");
+    if (!/^\d{4,6}$/.test(newPin)) return showToast("新密码需要是 4～6 位数字");
+    if (newPin !== confirmPin) return showToast("两次输入的新密码不一致");
+    if (newPin === currentPin) return showToast("新密码不能与当前密码相同");
+    profile.pin = newPin;
+    if (!saveState()) return;
+    closeModal();
+    showToast("访问密码已更新");
   });
 }
 

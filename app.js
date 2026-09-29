@@ -6,6 +6,9 @@ const LIVE_APP_ORIGIN = new URL(LIVE_APP_URL).origin;
 let deferredInstallPrompt = null;
 let pendingImportState = null;
 let migrationTimer = null;
+let trendRange = 7;
+let currentView = "home";
+let hiddenAt = 0;
 
 const defaultState = {
   activeProfile: null,
@@ -202,6 +205,7 @@ function renderHome() {
   renderGoalAdvice();
   renderWeightTrend();
   renderWeeklySnapshot();
+  if (currentView === "trend") renderTrend();
 }
 
 function renderWeightTrend() {
@@ -262,7 +266,137 @@ function renderWeeklySnapshot() {
   document.querySelector("#weekly-sleep").textContent = averageSleep ? `${Math.floor(averageSleep)}h ${Math.round((averageSleep % 1) * 60)}m` : "--";
 }
 
+function periodDates(days) {
+  return Array.from({ length: days }, (_, index) => {
+    const date = new Date();
+    date.setDate(date.getDate() - (days - 1 - index));
+    return localDateKey(date);
+  });
+}
+
+function shortDate(dateKey) {
+  const [, month, day] = dateKey.split("-");
+  return `${Number(month)}/${Number(day)}`;
+}
+
+function recordCalories(record) {
+  const foods = (record?.mealRecords || []).flatMap((meal) => meal.foods || []);
+  return macroSummary(foods).calories;
+}
+
+function renderHabitBars(elementId, entries, valueFor, targetFor, type) {
+  const element = document.querySelector(elementId);
+  element.className = `habit-bars habit-bars--${type}${entries.length > 7 ? " is-month" : ""}`;
+  element.innerHTML = entries.map((entry) => {
+    const value = valueFor(entry);
+    const target = Math.max(1, targetFor(entry));
+    const percent = value ? Math.max(8, Math.min(100, value / target * 100)) : 4;
+    const onTarget = value >= target * .9 && value <= target * 1.1;
+    const label = value ? `${Math.round(value)} / ${Math.round(target)}` : "未记录";
+    return `<i class="${value ? "has-value" : ""}${onTarget ? " is-on-target" : ""}" style="height:${percent}%" title="${shortDate(entry.date)} ${label}"></i>`;
+  }).join("");
+}
+
+function renderTrendWeightChart(history, dates) {
+  const chart = document.querySelector("#trend-weight-chart");
+  const empty = document.querySelector("#trend-weight-empty");
+  if (history.length < 2) {
+    chart.innerHTML = "";
+    empty.hidden = false;
+    return;
+  }
+  empty.hidden = true;
+  const values = history.map((item) => Number(item.weight));
+  const minimum = Math.min(...values);
+  const maximum = Math.max(...values);
+  const padding = Math.max(.4, (maximum - minimum) * .25);
+  const lower = minimum - padding;
+  const upper = maximum + padding;
+  const range = upper - lower;
+  const points = history.map((item) => {
+    const dayIndex = Math.max(0, dates.indexOf(item.date));
+    const x = 30 + dayIndex / Math.max(1, dates.length - 1) * 318;
+    const y = 132 - (Number(item.weight) - lower) / range * 112;
+    return { x, y, weight: Number(item.weight), date: item.date };
+  });
+  const path = points.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(" ");
+  const circles = points.map((point) => `<circle class="trend-point" cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="3.5"><title>${shortDate(point.date)} ${point.weight.toFixed(1)} kg</title></circle>`).join("");
+  chart.innerHTML = `<line class="trend-grid-line" x1="30" y1="20" x2="348" y2="20"></line><line class="trend-grid-line" x1="30" y1="76" x2="348" y2="76"></line><line class="trend-grid-line" x1="30" y1="132" x2="348" y2="132"></line><text class="trend-axis-label" x="0" y="24">${maximum.toFixed(1)}</text><text class="trend-axis-label" x="0" y="136">${minimum.toFixed(1)}</text><path class="trend-area" d="${path} L${points.at(-1).x.toFixed(1)} 142 L${points[0].x.toFixed(1)} 142 Z"></path><path class="trend-line" d="${path}"></path>${circles}<text class="trend-axis-label" x="30" y="160">${shortDate(history[0].date)}</text><text class="trend-axis-label" x="348" y="160" text-anchor="end">${shortDate(history.at(-1).date)}</text>`;
+}
+
+function trendInsight({ trackedDays, weightChange, weightDays, averageCalories, caloriePlan, waterRate, averageSleep }) {
+  if (trackedDays < 3) return { title: "先连续记录几天", body: "至少连续记录 3 天后，趋势判断会更可靠。每天完成体重、饮食、饮水和睡眠中的大部分记录即可。" };
+  if (weightDays >= 2 && weightChange < 0 && Math.abs(weightChange) / Math.max(1, trendRange / 7) > .8) return { title: "近期下降速度偏快", body: "体重短期下降较快时，不建议继续压低饮食。优先保证蛋白质、规律三餐和睡眠，并观察下一周的平均体重。" };
+  if (averageSleep && averageSleep < 7) return { title: "睡眠是本周期的优先项", body: `本周期平均睡眠 ${averageSleep.toFixed(1)} 小时。先把入睡时间提前 20～30 分钟，比继续减少热量更有利于稳定执行。` };
+  if (waterRate !== null && waterRate < 60) return { title: "饮水达标率还有提升空间", body: "把饮水分到起床、午餐和下午三个固定时间点，比临睡前集中补水更容易长期坚持。" };
+  if (caloriePlan.complete && averageCalories > caloriePlan.upper) return { title: "平均摄入略高于建议范围", body: "先减少高油、高糖饮品或零食中的一项，不需要同时压缩正餐主食和蛋白质。" };
+  if (weightDays >= 2 && weightChange <= 0) return { title: "当前节奏稳定", body: "体重方向与目标一致。继续保持现有饮食结构和记录频率，优先看 7 天平均，不被单日波动干扰。" };
+  return { title: "先观察完整一周", body: "当前记录还不足以判断平台期。保持计划不变并继续记录，满 7 天后再根据平均体重调整饮食。" };
+}
+
+function renderTrend() {
+  const profile = activeProfile();
+  const store = activeProfileStore();
+  if (!profile || !store) return;
+  const dates = periodDates(trendRange);
+  const entries = dates.map((date) => ({ date, record: store.days?.[date] || null }));
+  const firstDate = dates[0];
+  const history = (store.weightHistory || []).filter((item) => item.date >= firstDate && item.date <= dates.at(-1));
+  const currentWeight = Number(store.weightHistory?.at(-1)?.weight || activeRecord().weight || profile.startWeight);
+  const totalGoal = Math.max(.1, Number(profile.startWeight) - Number(profile.targetWeight));
+  const goalProgress = Math.max(0, Math.min(100, (Number(profile.startWeight) - currentWeight) / totalGoal * 100));
+  document.querySelector("#trend-period-label").textContent = `近 ${trendRange} 天的身体与习惯变化`;
+  document.querySelector("#trend-goal-percent").textContent = `${Math.round(goalProgress)}%`;
+  document.querySelector("#trend-goal-bar").style.width = `${goalProgress}%`;
+  document.querySelector("#trend-start-weight").textContent = `${Number(profile.startWeight).toFixed(1)} kg`;
+  document.querySelector("#trend-current-weight").textContent = `${currentWeight.toFixed(1)} kg`;
+  document.querySelector("#trend-target-weight").textContent = `${Number(profile.targetWeight).toFixed(1)} kg`;
+
+  const weightChange = history.length >= 2 ? Number(history.at(-1).weight) - Number(history[0].weight) : 0;
+  const weightChangeElement = document.querySelector("#trend-weight-change");
+  weightChangeElement.textContent = history.length >= 2 ? `${weightChange > 0 ? "+" : ""}${weightChange.toFixed(1)} kg` : "--";
+  weightChangeElement.className = history.length < 2 ? "" : weightChange <= 0 ? "is-positive" : "is-warning";
+  document.querySelector("#trend-weight-days").textContent = history.length ? `${history.length} 次体重记录` : "暂无记录";
+  document.querySelector("#trend-weight-caption").textContent = history.length >= 2 ? `${Number(history[0].weight).toFixed(1)} → ${Number(history.at(-1).weight).toFixed(1)} kg` : "继续记录形成趋势";
+  renderTrendWeightChart(history, dates);
+
+  const calorieEntries = entries.map((entry) => ({ ...entry, calories: recordCalories(entry.record) }));
+  const calorieDays = calorieEntries.filter((entry) => entry.calories > 0);
+  const averageCalories = calorieDays.length ? calorieDays.reduce((sum, entry) => sum + entry.calories, 0) / calorieDays.length : 0;
+  const caloriePlan = dailyCaloriePlan(profile, activeRecord());
+  document.querySelector("#trend-calorie-average").textContent = calorieDays.length ? `${Math.round(averageCalories)} kcal` : "--";
+  document.querySelector("#trend-calorie-note").textContent = calorieDays.length ? `${calorieDays.length} 天有记录 · 均值 ${Math.round(averageCalories)} kcal` : "暂无记录";
+  renderHabitBars("#trend-calorie-bars", calorieEntries, (entry) => entry.calories, () => caloriePlan.complete ? caloriePlan.center : Math.max(1, averageCalories), "calorie");
+
+  const waterDays = entries.filter((entry) => Number(entry.record?.water) > 0);
+  const waterMet = waterDays.filter((entry) => Number(entry.record.water) >= Number(entry.record.waterGoal || 1800)).length;
+  const waterRate = waterDays.length ? Math.round(waterMet / waterDays.length * 100) : null;
+  document.querySelector("#trend-water-rate").textContent = waterRate === null ? "--" : `${waterRate}%`;
+  document.querySelector("#trend-water-days").textContent = waterDays.length ? `${waterMet} / ${waterDays.length} 个记录日` : "暂无记录";
+  document.querySelector("#trend-water-note").textContent = waterDays.length ? `${waterMet} 天达到目标` : "暂无记录";
+  renderHabitBars("#trend-water-bars", entries, (entry) => Number(entry.record?.water || 0), (entry) => Number(entry.record?.waterGoal || 1800), "water");
+
+  const sleepDays = entries.map((entry) => ({ ...entry, hours: sleepHours(entry.record?.sleep) })).filter((entry) => entry.hours > 0);
+  const averageSleep = sleepDays.length ? sleepDays.reduce((sum, entry) => sum + entry.hours, 0) / sleepDays.length : 0;
+  document.querySelector("#trend-sleep-average").textContent = sleepDays.length ? `${averageSleep.toFixed(1)} h` : "--";
+  document.querySelector("#trend-sleep-days").textContent = sleepDays.length ? `${sleepDays.length} 天有记录` : "暂无记录";
+  document.querySelector("#trend-sleep-note").textContent = sleepDays.length ? `平均 ${averageSleep.toFixed(1)} 小时` : "暂无记录";
+  renderHabitBars("#trend-sleep-bars", entries, (entry) => sleepHours(entry.record?.sleep), () => 8, "sleep");
+
+  const trackedDays = entries.filter((entry) => entry.record && (entry.record.weightRecorded || entry.record.mealRecords?.length || Number(entry.record.water) || entry.record.sleep)).length;
+  const insight = trendInsight({ trackedDays, weightChange, weightDays: history.length, averageCalories, caloriePlan, waterRate, averageSleep });
+  document.querySelector("#trend-insight-title").textContent = insight.title;
+  document.querySelector("#trend-insight-body").textContent = insight.body;
+  document.querySelector("#trend-date-start").textContent = shortDate(dates[0]);
+  document.querySelector("#trend-date-middle").textContent = shortDate(dates[Math.floor((dates.length - 1) / 2)]);
+  document.querySelector("#trend-date-end").textContent = "今天";
+  document.querySelectorAll("[data-trend-range]").forEach((button) => button.classList.toggle("is-active", Number(button.dataset.trendRange) === trendRange));
+}
+
 function renderDate() {
+  const hour = new Date().getHours();
+  const greeting = hour < 6 ? "夜深了" : hour < 11 ? "早上好" : hour < 14 ? "中午好" : hour < 18 ? "下午好" : "晚上好";
+  document.querySelector("#greeting-copy").textContent = greeting;
   const parts = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "2-digit", month: "short" })
     .formatToParts(new Date())
     .reduce((result, part) => ({ ...result, [part.type]: part.value }), {});
@@ -279,7 +413,7 @@ function showToast(message) {
 
 function exportBackup() {
   const backup = {
-    app: "轻盈记录",
+    app: "sherry的掉秤日记",
     version: DATA_VERSION,
     exportedAt: new Date().toISOString(),
     state
@@ -288,7 +422,7 @@ function exportBackup() {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `轻盈记录备份-${localDateKey()}.json`;
+  link.download = `sherry的掉秤日记备份-${localDateKey()}.json`;
   document.body.appendChild(link);
   link.click();
   link.remove();
@@ -328,7 +462,7 @@ async function prepareImport(file) {
 
 async function installApp() {
   if (window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone) {
-    return showToast("轻盈记录已经安装到桌面");
+    return showToast("sherry的掉秤日记已经安装到桌面");
   }
   if (deferredInstallPrompt) {
     deferredInstallPrompt.prompt();
@@ -541,6 +675,8 @@ function goalAdvice() {
   const weeklyTarget = remaining / remainingWeeks;
   const safeWeekly = Math.min(.75, profile.startWeight * .01);
   const latestMeal = record.mealRecords.at(-1);
+  const latestMealSummary = latestMeal ? latestMeal.summary || macroSummary(latestMeal.foods || []) : null;
+  const latestMealLabel = latestMeal?.mealTime || "最近一餐";
   const sleep = sleepHours(record.sleep);
   const suggestions = [];
 
@@ -553,12 +689,12 @@ function goalAdvice() {
 
   if (!latestMeal) {
     suggestions.push({ title: "先记录一顿完整饮食", body: "添加具体食物后，我会根据碳水、蛋白质和脂肪供能占比，给出更贴近目标的调整建议。", source: "基于：今日尚无具体食物记录" });
-  } else if (latestMeal.summary.proteinPercent < 20) {
-    suggestions.push({ title: "下一餐增加优质蛋白", body: `最近一餐蛋白质供能约 ${latestMeal.summary.proteinPercent}%，略低。可以增加鸡蛋、鱼虾、瘦肉或豆制品，同时保持主食份量稳定。`, source: `基于：${latestMeal.mealTime}营养估算 · 个人减脂目标` });
-  } else if (latestMeal.summary.fatPercent > 35) {
-    suggestions.push({ title: "下一餐减少隐形油脂", body: `最近一餐脂肪供能约 ${latestMeal.summary.fatPercent}%，偏高。下一餐优先清蒸或炖煮，并减少酱料、油炸和坚果叠加。`, source: `基于：${latestMeal.mealTime}营养估算 · 个人减脂目标` });
+  } else if (latestMealSummary.proteinPercent < 20) {
+    suggestions.push({ title: "下一餐增加优质蛋白", body: `最近一餐蛋白质供能约 ${latestMealSummary.proteinPercent}%，略低。可以增加鸡蛋、鱼虾、瘦肉或豆制品，同时保持主食份量稳定。`, source: `基于：${latestMealLabel}营养估算 · 个人减脂目标` });
+  } else if (latestMealSummary.fatPercent > 35) {
+    suggestions.push({ title: "下一餐减少隐形油脂", body: `最近一餐脂肪供能约 ${latestMealSummary.fatPercent}%，偏高。下一餐优先清蒸或炖煮，并减少酱料、油炸和坚果叠加。`, source: `基于：${latestMealLabel}营养估算 · 个人减脂目标` });
   } else {
-    suggestions.push({ title: "这餐结构可以保持", body: `最近一餐蛋白质供能 ${latestMeal.summary.proteinPercent}%、脂肪 ${latestMeal.summary.fatPercent}%，整体较平衡。下一餐继续保持具体食物和份量记录。`, source: `基于：${latestMeal.mealTime}营养估算 · 个人减脂目标` });
+    suggestions.push({ title: "这餐结构可以保持", body: `最近一餐蛋白质供能 ${latestMealSummary.proteinPercent}%、脂肪 ${latestMealSummary.fatPercent}%，整体较平衡。下一餐继续保持具体食物和份量记录。`, source: `基于：${latestMealLabel}营养估算 · 个人减脂目标` });
   }
 
   if (sleep && sleep < 7) {
@@ -689,6 +825,10 @@ function openModal(type) {
 function openProfiles() {
   const modal = document.querySelector("#modal-backdrop");
   const current = activeProfile();
+  if (!current) {
+    openCreateProfile();
+    return;
+  }
   document.querySelector("#modal-close").hidden = false;
   document.querySelector("#modal-title").textContent = "切换档案";
   document.querySelector("#modal-kicker").textContent = "LOCAL PROFILES";
@@ -815,7 +955,54 @@ function openCreateProfile() {
   }
 }
 
-function closeModal() { document.querySelector("#modal-backdrop").hidden = true; }
+function setNavigation(tab) {
+  document.querySelectorAll(".nav-item").forEach((item) => item.classList.toggle("is-active", item.dataset.tab === tab));
+}
+
+function showAppView(view) {
+  if (!activeProfile()) return openCreateProfile();
+  currentView = view;
+  document.querySelector("#home-view").hidden = view !== "home";
+  document.querySelector("#trend-view").hidden = view !== "trend";
+  setNavigation(view);
+  if (view === "trend") renderTrend();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function showLockScreen() {
+  if (!state.profiles.length) return;
+  const select = document.querySelector("#lock-profile");
+  select.innerHTML = state.profiles.map((profile) => `<option value="${profile.id}" ${profile.id === state.activeProfile ? "selected" : ""}>${profile.name}</option>`).join("");
+  document.querySelector("#lock-pin").value = "";
+  document.querySelector("#lock-error").textContent = "";
+  document.querySelector("#modal-backdrop").hidden = true;
+  document.querySelector("#app-shell").hidden = true;
+  document.querySelector("#app-lock").hidden = false;
+  window.setTimeout(() => document.querySelector("#lock-pin").focus(), 50);
+}
+
+function unlockApp() {
+  const profile = state.profiles.find((item) => item.id === document.querySelector("#lock-profile").value);
+  const pin = document.querySelector("#lock-pin").value.trim();
+  if (!profile || pin !== profile.pin) {
+    document.querySelector("#lock-error").textContent = "访问密码不正确";
+    document.querySelector("#lock-pin").select();
+    return;
+  }
+  state.activeProfile = profile.id;
+  saveState();
+  document.querySelector("#app-lock").hidden = true;
+  document.querySelector("#app-shell").hidden = false;
+  currentView = "home";
+  renderDate();
+  renderHome();
+  showAppView("home");
+}
+
+function closeModal() {
+  document.querySelector("#modal-backdrop").hidden = true;
+  setNavigation(currentView);
+}
 function rotateAdvice() { currentAdvice = (currentAdvice + 1) % goalAdvice().length; renderGoalAdvice(); }
 
 document.querySelectorAll("[data-record]").forEach((button) => button.addEventListener("click", () => openModal(button.dataset.record)));
@@ -825,18 +1012,44 @@ document.querySelector("#modal-backdrop").addEventListener("click", (event) => {
 document.querySelector("#refresh-advice").addEventListener("click", rotateAdvice);
 document.querySelector("#complete-calorie-profile").addEventListener("click", () => { document.querySelector("#modal-backdrop").hidden = false; openGoalEditor(); });
 document.querySelector("#advice-done").addEventListener("click", (event) => { event.currentTarget.classList.toggle("is-done"); showToast(event.currentTarget.classList.contains("is-done") ? "建议已完成" : "已恢复待办"); });
-document.querySelectorAll("[data-tab]").forEach((button) => button.addEventListener("click", () => { document.querySelectorAll(".nav-item").forEach((item) => item.classList.toggle("is-active", item === button || item.dataset.tab === button.dataset.tab)); if (button.dataset.tab === "records") openModal("meal"); if (button.dataset.tab === "profile") openProfiles(); if (button.dataset.tab === "trend") showToast("趋势页将在下一版展开完整数据"); }));
+document.querySelectorAll("[data-tab]").forEach((button) => button.addEventListener("click", () => {
+  const tab = button.dataset.tab;
+  if (tab === "home" || tab === "trend") return showAppView(tab);
+  setNavigation(tab);
+  if (tab === "records") openModal("meal");
+  if (tab === "profile") openProfiles();
+}));
+document.querySelectorAll("[data-trend-range]").forEach((button) => button.addEventListener("click", () => {
+  trendRange = Number(button.dataset.trendRange);
+  renderTrend();
+}));
+document.querySelector("#unlock-app").addEventListener("click", unlockApp);
+document.querySelector("#lock-pin").addEventListener("keydown", (event) => { if (event.key === "Enter") unlockApp(); });
 window.addEventListener("beforeinstallprompt", (event) => {
   event.preventDefault();
   deferredInstallPrompt = event;
 });
 window.addEventListener("appinstalled", () => {
   deferredInstallPrompt = null;
-  showToast("轻盈记录已安装到桌面");
+  showToast("sherry的掉秤日记已安装到桌面");
 });
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    hiddenAt = Date.now();
+    return;
+  }
+  renderDate();
+  if (hiddenAt && Date.now() - hiddenAt >= 2 * 60 * 1000) showLockScreen();
+});
+
 renderDate();
-if (state.profiles.length) renderHome();
-else openCreateProfile();
+if (state.profiles.length) {
+  showLockScreen();
+} else {
+  document.querySelector("#app-lock").hidden = true;
+  document.querySelector("#app-shell").hidden = false;
+  openCreateProfile();
+}
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => navigator.serviceWorker.register("./service-worker.js").catch(() => {}));

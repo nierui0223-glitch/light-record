@@ -7,18 +7,35 @@
     <meta name="description" content="记录体重、饮食、饮水与睡眠的个人减脂管理工具" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="轻盈记录" />
-    <title>轻盈记录</title>
+    <meta name="apple-mobile-web-app-title" content="sherry的掉秤日记" />
+    <title>sherry的掉秤日记</title>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" href="icons/icon-192.png" />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=5" />
   </head>
   <body>
-    <main class="app-shell">
+    <section class="app-lock" id="app-lock" aria-labelledby="lock-title">
+      <div class="lock-brand">S</div>
+      <p class="eyebrow">PRIVATE HEALTH JOURNAL</p>
+      <h1 id="lock-title">sherry的掉秤日记</h1>
+      <p class="lock-copy">请输入访问密码查看你的记录</p>
+      <div class="lock-form">
+        <label for="lock-profile">进入档案</label>
+        <select id="lock-profile"></select>
+        <label for="lock-pin">访问密码</label>
+        <input id="lock-pin" type="password" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="4～6 位数字" />
+        <p class="lock-error" id="lock-error" role="alert"></p>
+        <button class="primary-button" type="button" id="unlock-app">进入日记</button>
+      </div>
+      <small>密码仅保存在当前设备</small>
+    </section>
+
+    <main class="app-shell" id="app-shell" hidden>
       <header class="topbar">
         <div>
+          <p class="brand-name">sherry的掉秤日记</p>
           <p class="eyebrow" id="today-label">TODAY</p>
-          <h1>早上好，<span id="greeting-name">阿宁</span></h1>
+          <h1><span id="greeting-copy">你好</span>，<span id="greeting-name">sherry</span></h1>
         </div>
         <button class="profile-trigger" id="profile-trigger" aria-label="切换档案">
           <span class="avatar avatar-coral" id="profile-avatar">宁</span>
@@ -26,6 +43,7 @@
         </button>
       </header>
 
+      <div class="home-view" id="home-view">
       <section class="hero-card">
         <div class="hero-card__topline">
           <span class="section-label">当前体重</span>
@@ -153,6 +171,77 @@
           <div class="snapshot-card"><span class="snapshot-icon snapshot-icon--yellow">☾</span><strong id="weekly-sleep">--</strong><small>平均睡眠</small></div>
         </div>
       </section>
+      </div>
+
+      <section class="trend-view" id="trend-view" hidden>
+        <div class="trend-heading">
+          <div>
+            <p class="eyebrow">PROGRESS REVIEW</p>
+            <h2>趋势</h2>
+            <p id="trend-period-label">近 7 天的身体与习惯变化</p>
+          </div>
+          <div class="range-control" aria-label="趋势周期">
+            <button class="is-active" type="button" data-trend-range="7">7 天</button>
+            <button type="button" data-trend-range="30">30 天</button>
+          </div>
+        </div>
+
+        <section class="goal-progress-section">
+          <div class="goal-progress-head">
+            <span>减脂目标进度</span>
+            <strong id="trend-goal-percent">0%</strong>
+          </div>
+          <div class="goal-progress-track"><i id="trend-goal-bar"></i></div>
+          <div class="goal-progress-meta">
+            <span>起点 <b id="trend-start-weight">-- kg</b></span>
+            <span>当前 <b id="trend-current-weight">-- kg</b></span>
+            <span>目标 <b id="trend-target-weight">-- kg</b></span>
+          </div>
+        </section>
+
+        <section class="trend-summary" aria-label="周期汇总">
+          <div><span>体重变化</span><strong id="trend-weight-change">--</strong><small id="trend-weight-days">暂无记录</small></div>
+          <div><span>平均摄入</span><strong id="trend-calorie-average">--</strong><small>有饮食记录的日期</small></div>
+          <div><span>饮水达标</span><strong id="trend-water-rate">--</strong><small id="trend-water-days">暂无记录</small></div>
+          <div><span>平均睡眠</span><strong id="trend-sleep-average">--</strong><small id="trend-sleep-days">暂无记录</small></div>
+        </section>
+
+        <section class="trend-panel weight-trend-panel">
+          <div class="trend-panel-heading">
+            <div><p class="eyebrow">WEIGHT</p><h3>体重变化</h3></div>
+            <span id="trend-weight-caption">继续记录形成趋势</span>
+          </div>
+          <div class="trend-chart-wrap">
+            <svg id="trend-weight-chart" viewBox="0 0 360 170" role="img" aria-label="周期体重趋势"></svg>
+            <p class="trend-empty" id="trend-weight-empty">至少记录 2 次体重后显示变化曲线。</p>
+          </div>
+        </section>
+
+        <section class="trend-panel habits-panel">
+          <div class="trend-panel-heading">
+            <div><p class="eyebrow">DAILY HABITS</p><h3>每日完成情况</h3></div>
+            <span>越高越接近目标</span>
+          </div>
+          <div class="habit-row">
+            <div class="habit-label"><span><i class="habit-dot habit-dot--coral"></i>热量</span><b id="trend-calorie-note">暂无记录</b></div>
+            <div class="habit-bars" id="trend-calorie-bars"></div>
+          </div>
+          <div class="habit-row">
+            <div class="habit-label"><span><i class="habit-dot habit-dot--blue"></i>饮水</span><b id="trend-water-note">暂无记录</b></div>
+            <div class="habit-bars" id="trend-water-bars"></div>
+          </div>
+          <div class="habit-row">
+            <div class="habit-label"><span><i class="habit-dot habit-dot--yellow"></i>睡眠</span><b id="trend-sleep-note">暂无记录</b></div>
+            <div class="habit-bars" id="trend-sleep-bars"></div>
+          </div>
+          <div class="trend-date-axis"><span id="trend-date-start">--</span><span id="trend-date-middle">--</span><span id="trend-date-end">今天</span></div>
+        </section>
+
+        <section class="trend-insight">
+          <span class="trend-insight-mark">i</span>
+          <div><p class="eyebrow">PERIOD INSIGHT</p><h3 id="trend-insight-title">先连续记录几天</h3><p id="trend-insight-body">有了连续数据后，才能更准确地区分日常波动和真正的变化趋势。</p></div>
+        </section>
+      </section>
 
       <nav class="bottom-nav" aria-label="主导航">
         <button class="nav-item is-active" data-tab="home"><span>⌂</span><small>今日</small></button>
@@ -171,6 +260,6 @@
     </div>
 
     <div class="toast" id="toast" role="status"></div>
-    <script src="app.js"></script>
+    <script src="app.js?v=5"></script>
   </body>
 </html>

@@ -7,6 +7,7 @@ let deferredInstallPrompt = null;
 let pendingImportState = null;
 let migrationTimer = null;
 let trendRange = 7;
+let recordsRange = "today";
 let currentView = "home";
 let hiddenAt = 0;
 
@@ -279,10 +280,80 @@ function recordTime(value) {
   return new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(date);
 }
 
+function hasDailyData(record) {
+  return Boolean(record && (record.weightRecorded || record.mealRecords?.length || Number(record.water) || record.sleep));
+}
+
+function historyDateLabel(dateKey) {
+  return new Intl.DateTimeFormat("zh-CN", { month: "long", day: "numeric", weekday: "short" }).format(new Date(`${dateKey}T00:00:00`));
+}
+
+function historyFocus({ mealDays, sleepDays, averageSleep, summary, averageCalories, caloriePlan }) {
+  if (mealDays < 3 && sleepDays < 3) return { title: "先积累几天记录", body: "至少记录 3 天的具体食物和睡眠，才能给出更可靠的周期调整建议。" };
+  if (sleepDays >= 3 && averageSleep < 7) return { title: "优先把睡眠补到 7 小时", body: `近 30 天有 ${sleepDays} 天睡眠记录，平均 ${averageSleep.toFixed(1)} 小时。先将入睡时间稳定提前 20～30 分钟，不建议同时大幅减少饮食。` };
+  if (mealDays >= 3 && summary.proteinPercent < 20) return { title: "每餐补一份优质蛋白", body: `近期蛋白质供能约 ${summary.proteinPercent}%，低于参考范围。优先增加鸡蛋、鱼虾、瘦肉或豆制品，而不是继续减少主食。` };
+  if (mealDays >= 3 && summary.fatPercent > 35) return { title: "先减少隐形油脂", body: `近期脂肪供能约 ${summary.fatPercent}%，高于参考范围。优先减少油炸、沙拉酱、坚果叠加和高油烹调。` };
+  if (mealDays >= 3 && caloriePlan.complete && averageCalories > caloriePlan.upper) return { title: "平均摄入略高于建议", body: `有记录的日均摄入约 ${Math.round(averageCalories)} kcal。可以先减少一项高油零食或含糖饮品，观察 7 天平均体重后再调整。` };
+  return { title: "当前饮食与睡眠节奏可以保持", body: "继续保持具体食物和睡眠记录，优先根据 7 天平均体重做小幅调整。" };
+}
+
+function renderHistoryRecords() {
+  const store = activeProfileStore();
+  const profile = activeProfile();
+  const dates = periodDates(30);
+  const entries = dates.map((date) => ({ date, record: store?.days?.[date] || null }));
+  const recordedEntries = entries.filter((entry) => hasDailyData(entry.record));
+  const mealEntries = entries.filter((entry) => entry.record?.mealRecords?.length);
+  const sleepEntries = entries.map((entry) => ({ ...entry, hours: sleepHours(entry.record?.sleep) })).filter((entry) => entry.hours > 0);
+  const allFoods = mealEntries.flatMap((entry) => entry.record.mealRecords.flatMap((meal) => meal.foods || []));
+  const summary = macroSummary(allFoods);
+  const averageCalories = mealEntries.length ? mealEntries.reduce((sum, entry) => sum + recordCalories(entry.record), 0) / mealEntries.length : 0;
+  const averageSleep = sleepEntries.length ? sleepEntries.reduce((sum, entry) => sum + entry.hours, 0) / sleepEntries.length : 0;
+  const goodSleepDays = sleepEntries.filter((entry) => entry.hours >= 7).length;
+  const caloriePlan = dailyCaloriePlan(profile, activeRecord());
+  const focus = historyFocus({ mealDays: mealEntries.length, sleepDays: sleepEntries.length, averageSleep, summary, averageCalories, caloriePlan });
+
+  document.querySelector("#history-meal-days").textContent = `${mealEntries.length} 天`;
+  document.querySelector("#history-calorie-average").textContent = mealEntries.length ? `${Math.round(averageCalories)} kcal` : "--";
+  document.querySelector("#history-sleep-average").textContent = sleepEntries.length ? `${averageSleep.toFixed(1)} h` : "--";
+  document.querySelector("#history-sleep-good").textContent = `${goodSleepDays} 天`;
+  document.querySelector("#history-focus-title").textContent = focus.title;
+  document.querySelector("#history-focus-body").textContent = focus.body;
+  document.querySelector("#history-macro-summary").textContent = allFoods.length ? `平均供能占比：碳水 ${summary.carbsPercent}% · 蛋白质 ${summary.proteinPercent}% · 脂肪 ${summary.fatPercent}%` : "营养结构：暂无数据";
+
+  document.querySelector("#history-days").innerHTML = recordedEntries.length ? recordedEntries.reverse().map(({ date, record }) => {
+    const meals = record.mealRecords || [];
+    const dayCalories = recordCalories(record);
+    const daySleep = sleepHours(record.sleep);
+    const dayStats = [
+      meals.length ? `<span>摄入 <b>${dayCalories} kcal</b></span>` : "",
+      record.sleep ? `<span>睡眠 <b>${daySleep.toFixed(1)} h</b></span>` : "",
+      Number(record.water) ? `<span>饮水 <b>${Number(record.water)} ml</b></span>` : "",
+      record.weightRecorded ? `<span>体重 <b>${Number(record.weight).toFixed(1)} kg</b></span>` : ""
+    ].filter(Boolean).join("");
+    const mealDetails = meals.length ? meals.map((meal) => {
+      const mealSummary = meal.summary || macroSummary(meal.foods || []);
+      const foods = (meal.foods || []).map((food) => `${escapeHtml(food.name)} ×${Number(food.quantity || 1)}`).join("、");
+      return `<div class="history-meal"><div class="history-meal-head"><strong>${escapeHtml(meal.mealTime || "一餐")}</strong><span>${mealSummary.calories} kcal</span></div><p>${foods || "未保存食物明细"}</p><small>碳水 ${mealSummary.carbsPercent}% · 蛋白质 ${mealSummary.proteinPercent}% · 脂肪 ${mealSummary.fatPercent}%</small></div>`;
+    }).join("") : `<p class="history-day-empty">当天没有具体饮食记录</p>`;
+    return `<article class="history-day"><div class="history-day-header"><h3>${historyDateLabel(date)}</h3><span>${date}</span></div><div class="history-day-stats">${dayStats}</div><div class="history-meals">${mealDetails}</div></article>`;
+  }).join("") : `<div class="records-empty">近 30 天还没有可展示的记录</div>`;
+}
+
 function renderRecords() {
   const record = activeRecord();
   if (!record) return;
   const date = new Date();
+  const isHistory = recordsRange === "30";
+  document.querySelector("#records-today").hidden = isHistory;
+  document.querySelector("#records-history").hidden = !isHistory;
+  document.querySelector("#records-view-title").textContent = isHistory ? "近 30 天记录" : "今日记录";
+  document.querySelectorAll("[data-records-range]").forEach((button) => button.classList.toggle("is-active", button.dataset.recordsRange === recordsRange));
+  if (isHistory) {
+    document.querySelector("#records-date-label").textContent = "回看饮食、睡眠与每日状态";
+    renderHistoryRecords();
+    return;
+  }
   document.querySelector("#records-date-label").textContent = `${date.getMonth() + 1} 月 ${date.getDate()} 日已添加的全部内容`;
   document.querySelector("#records-weight").innerHTML = record.weightRecorded
     ? `<div class="record-simple"><div><span>今日体重</span><strong>${Number(record.weight).toFixed(1)} kg</strong></div><small>7 天平均 ${Number(record.average).toFixed(1)} kg</small></div>`
@@ -618,14 +689,15 @@ function estimateCustomFood(name) {
 }
 
 function foodCalories(food) {
-  return Math.round((food.carbs * 4 + food.protein * 4 + food.fat * 9) * food.quantity);
+  const quantity = Number(food.quantity) || 1;
+  return Math.round((Number(food.carbs || 0) * 4 + Number(food.protein || 0) * 4 + Number(food.fat || 0) * 9) * quantity);
 }
 
 function macroSummary(foods) {
   const totals = foods.reduce((sum, food) => ({
-    carbs: sum.carbs + food.carbs * food.quantity,
-    protein: sum.protein + food.protein * food.quantity,
-    fat: sum.fat + food.fat * food.quantity
+    carbs: sum.carbs + Number(food.carbs || 0) * (Number(food.quantity) || 1),
+    protein: sum.protein + Number(food.protein || 0) * (Number(food.quantity) || 1),
+    fat: sum.fat + Number(food.fat || 0) * (Number(food.quantity) || 1)
   }), { carbs: 0, protein: 0, fat: 0 });
   const energy = { carbs: totals.carbs * 4, protein: totals.protein * 4, fat: totals.fat * 9 };
   const calories = energy.carbs + energy.protein + energy.fat;
@@ -1096,6 +1168,11 @@ document.querySelectorAll("[data-tab]").forEach((button) => button.addEventListe
   if (tab === "profile") openProfiles();
 }));
 document.querySelectorAll("[data-add-record]").forEach((button) => button.addEventListener("click", () => openModal(button.dataset.addRecord)));
+document.querySelectorAll("[data-records-range]").forEach((button) => button.addEventListener("click", () => {
+  recordsRange = button.dataset.recordsRange;
+  renderRecords();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}));
 document.querySelectorAll("[data-trend-range]").forEach((button) => button.addEventListener("click", () => {
   trendRange = Number(button.dataset.trendRange);
   renderTrend();

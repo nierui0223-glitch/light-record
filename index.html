@@ -11,7 +11,7 @@
     <title>sherry的掉秤日记</title>
     <link rel="manifest" href="manifest.webmanifest?v=7" />
     <link rel="apple-touch-icon" href="icons/icon-192.png" />
-    <link rel="stylesheet" href="styles.css?v=8" />
+    <link rel="stylesheet" href="styles.css?v=9" />
   </head>
   <body>
     <section class="app-lock" id="app-lock" aria-labelledby="lock-title">
@@ -175,10 +175,17 @@
 
       <section class="records-view" id="records-view" hidden>
         <div class="records-heading">
-          <p class="eyebrow">DAILY LOG</p>
-          <h2>今日记录</h2>
-          <p id="records-date-label">查看今天已添加的全部内容</p>
+          <div>
+            <p class="eyebrow">DAILY LOG</p>
+            <h2 id="records-view-title">今日记录</h2>
+            <p id="records-date-label">查看今天已添加的全部内容</p>
+          </div>
+          <div class="range-control records-range-control" aria-label="记录周期">
+            <button class="is-active" type="button" data-records-range="today">今日</button>
+            <button type="button" data-records-range="30">30 天</button>
+          </div>
         </div>
+        <div id="records-today">
         <div class="records-actions" aria-label="快速添加记录">
           <button type="button" data-add-record="weight"><span>↕</span><b>体重</b></button>
           <button type="button" data-add-record="meal"><span>◒</span><b>饮食</b></button>
@@ -202,6 +209,22 @@
           <div class="record-section-heading"><div><span class="record-type-icon record-type-icon--sleep">☾</span><h3>睡眠</h3></div><button type="button" data-add-record="sleep">修改</button></div>
           <div id="records-sleep"></div>
         </section>
+        </div>
+
+        <div class="records-history" id="records-history" hidden>
+          <section class="history-summary" aria-label="近 30 天汇总">
+            <div><span>饮食记录</span><strong id="history-meal-days">0 天</strong></div>
+            <div><span>平均热量</span><strong id="history-calorie-average">--</strong></div>
+            <div><span>平均睡眠</span><strong id="history-sleep-average">--</strong></div>
+            <div><span>睡够 7 小时</span><strong id="history-sleep-good">0 天</strong></div>
+          </section>
+          <section class="history-focus">
+            <div><span class="trend-insight-mark">i</span><div><p class="eyebrow">30-DAY FOCUS</p><h3 id="history-focus-title">先积累几天记录</h3></div></div>
+            <p id="history-focus-body">记录越连续，越容易找到可以优先改善的环节。</p>
+            <p class="history-macro-summary" id="history-macro-summary">营养结构：暂无数据</p>
+          </section>
+          <div class="history-days" id="history-days"></div>
+        </div>
       </section>
 
       <section class="trend-view" id="trend-view" hidden>
@@ -291,6 +314,6 @@
     </div>
 
     <div class="toast" id="toast" role="status"></div>
-    <script src="app.js?v=8"></script>
+    <script src="app.js?v=9"></script>
   </body>
 </html>

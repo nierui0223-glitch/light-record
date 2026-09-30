@@ -11,7 +11,7 @@
     <title>sherry的掉秤日记</title>
     <link rel="manifest" href="manifest.webmanifest?v=7" />
     <link rel="apple-touch-icon" href="icons/icon-192.png" />
-    <link rel="stylesheet" href="styles.css?v=10" />
+    <link rel="stylesheet" href="styles.css?v=11" />
   </head>
   <body>
     <section class="app-lock" id="app-lock" aria-labelledby="lock-title">
@@ -146,21 +146,10 @@
             <p class="eyebrow">SMALL NEXT STEP</p>
             <h2>今天的建议</h2>
           </div>
-          <button class="text-button" id="refresh-advice">换一条</button>
+          <span class="advice-position" id="advice-position">1 / 1</span>
         </div>
-        <article class="advice-card">
-          <div class="advice-mark">01</div>
-          <div class="advice-copy">
-            <h3 id="advice-title">午餐补一份蛋白质</h3>
-            <p id="advice-body">今天早餐记录显示蛋白质偏少，午餐可以加一份鸡蛋、鱼肉或豆制品，让下午更稳定。</p>
-            <div class="advice-plan">
-              <div><span>今天怎么做</span><p id="advice-action">下一餐补一掌心优质蛋白。</p></div>
-              <div><span>观察重点</span><p id="advice-observe">连续观察 7 天平均体重和饱腹感。</p></div>
-            </div>
-            <span class="source-note">基于：早餐记录 · 最近 3 天饱腹感</span>
-          </div>
-          <button class="advice-done" id="advice-done" aria-label="完成建议">✓</button>
-        </article>
+        <div class="advice-carousel" id="advice-carousel"><div class="advice-track" id="advice-track"></div></div>
+        <div class="advice-dots" id="advice-dots" aria-label="建议页码"></div>
       </section>
 
       <section class="week-section">
@@ -338,6 +327,6 @@
     </div>
 
     <div class="toast" id="toast" role="status"></div>
-    <script src="app.js?v=10"></script>
+    <script src="app.js?v=11"></script>
   </body>
 </html>

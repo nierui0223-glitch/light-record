@@ -48,7 +48,7 @@ h3 { margin-bottom: 8px; font-size: 16px; line-height: 1.3; }
 .avatar.has-image { background-position: center; background-size: cover; color: transparent; }
 .chevron { color: var(--muted); font-size: 19px; margin-top: -4px; }
 .hero-card { overflow: hidden; position: relative; padding: 23px 23px 17px; border-radius: 8px; background: #314a41; color: #f9f8f1; box-shadow: var(--shadow); }
-.hero-card.has-photo { background-position: center; background-size: cover; }
+.hero-card.has-photo { background-position: center; background-size: cover; text-shadow: 0 1px 3px rgba(20,30,26,.48); }
 .hero-card::after { content: ""; position: absolute; width: 180px; height: 180px; border: 1px solid rgba(255,255,255,.12); border-radius: 50%; right: -70px; top: -95px; }
 .hero-card__topline, .weight-meta, .chart-labels { display: flex; justify-content: space-between; align-items: center; }
 .section-label { font-size: 12px; color: rgba(255,255,255,.7); }
@@ -117,15 +117,20 @@ h3 { margin-bottom: 8px; font-size: 16px; line-height: 1.3; }
 .calorie-progress i { display: block; width: 0; height: 100%; border-radius: inherit; background: var(--mint-deep); transition: width .25s ease; }
 .calorie-plan p { grid-column: 1 / -1; margin: -2px 0 0; color: #6c766f; font-size: 9px; line-height: 1.5; }
 .calorie-plan.is-incomplete { background: #f3f3ef; }
-.advice-card { display: grid; grid-template-columns: 29px 1fr 28px; gap: 12px; padding: 18px 16px; border: 1px solid #f0ddd6; border-radius: 8px; background: #fff8f4; }
+.advice-position { color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+.advice-carousel { overflow-x: auto; width: 100%; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.advice-carousel::-webkit-scrollbar { display: none; }
+.advice-track { display: grid; grid-auto-flow: column; grid-auto-columns: 100%; align-items: stretch; }
+.advice-card { display: grid; grid-template-columns: 29px minmax(0, 1fr); gap: 12px; min-width: 0; padding: 18px 16px; border: 1px solid #f0ddd6; border-radius: 8px; background: #fff8f4; scroll-snap-align: start; scroll-snap-stop: always; }
 .advice-mark { color: var(--coral); font-family: ui-monospace, monospace; font-size: 12px; font-weight: 800; }
 .advice-copy > p { margin-bottom: 11px; color: #606861; font-size: 12px; line-height: 1.65; }
 .advice-plan { display: grid; gap: 8px; margin: 0 0 11px; padding: 10px; border-radius: 7px; background: rgba(255,255,255,.72); }
 .advice-plan span { display: block; margin-bottom: 3px; color: #b06f5e; font-size: 8px; font-weight: 800; }
 .advice-plan p { margin: 0; color: #4f5953; font-size: 10px; line-height: 1.55; }
-.source-note { color: #b08b80; font-size: 10px; }
-.advice-done { align-self: start; width: 27px; height: 27px; border: 1px solid #ecc7bc; border-radius: 50%; background: transparent; color: var(--coral); font-size: 14px; }
-.advice-done.is-done { background: var(--coral); color: #fff; }
+.source-note { display: block; color: #b08b80; font-size: 10px; }
+.advice-dots { display: flex; min-height: 17px; justify-content: center; align-items: center; gap: 5px; margin-top: 8px; }
+.advice-dots button { width: 6px; height: 6px; padding: 0; border-radius: 50%; background: #d7d7d1; transition: width .2s ease, background .2s ease; }
+.advice-dots button.is-active { width: 17px; border-radius: 99px; background: var(--coral); }
 .snapshot-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; }
 .snapshot-card { padding: 14px 12px 13px; border-radius: 8px; background: var(--paper); }
 .snapshot-icon { display: grid; place-items: center; width: 27px; height: 27px; margin-bottom: 14px; border-radius: 8px; font-size: 13px; }
@@ -375,9 +380,16 @@ h3 { margin-bottom: 8px; font-size: 16px; line-height: 1.3; }
 .personal-preview { grid-row: 1 / 3; display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; background: var(--coral-soft); color: var(--coral); font-size: 12px; font-weight: 750; }
 .personal-preview.has-image { background-position: center; background-size: cover; color: transparent; }
 .dashboard-preview { border-radius: 6px; background: #314a41; color: #fff; }
-.dashboard-library { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: -4px 0 14px; padding: 9px 11px; border-radius: 7px; background: #f2f5f2; }
-.dashboard-library span { color: var(--muted); font-size: 9px; }
-.dashboard-library button { flex: 0 0 auto; padding: 6px 8px; border-radius: 5px; background: #fff; color: #b85442; font-size: 9px; font-weight: 700; }
+.dashboard-library { margin: -4px 0 14px; padding: 11px; border-radius: 7px; background: #f2f5f2; }
+.dashboard-library-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 9px; }
+.dashboard-library-head span { color: var(--muted); font-size: 9px; }
+.dashboard-library-head button { flex: 0 0 auto; padding: 6px 8px; border-radius: 5px; background: #fff; color: #b85442; font-size: 9px; font-weight: 700; }
+.dashboard-thumbnails { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+.dashboard-thumbnail { position: relative; overflow: hidden; aspect-ratio: 1.55; border-radius: 6px; background-color: #314a41; background-position: center; background-size: cover; }
+.dashboard-thumbnail > span { position: absolute; top: 5px; left: 5px; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: rgba(28,33,30,.65); color: #fff; font-size: 8px; }
+.dashboard-thumbnail > div { position: absolute; right: 5px; bottom: 5px; display: flex; gap: 4px; }
+.dashboard-thumbnail button { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border-radius: 50%; background: rgba(255,255,255,.92); color: #505853; font-size: 14px; font-weight: 800; box-shadow: 0 2px 7px rgba(20,30,26,.16); }
+.dashboard-thumbnail button:last-child { color: #b85442; }
 .profile-list { display: grid; gap: 9px; margin-bottom: 15px; }
 .profile-item { display: grid; grid-template-columns: 36px 1fr 18px; gap: 10px; align-items: center; width: 100%; padding: 11px; border: 1px solid var(--line); border-radius: 8px; background: #fff; text-align: left; }
 .profile-item.is-current { border-color: #eabeb1; background: #fff8f4; }

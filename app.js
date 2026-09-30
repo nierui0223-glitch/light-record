@@ -15,6 +15,7 @@ let hiddenAt = 0;
 let dashboardTimer = null;
 let dashboardProfileId = null;
 let dashboardImageIndex = 0;
+const DASHBOARD_OVERLAY = "linear-gradient(rgba(28, 48, 41, .24), rgba(28, 48, 41, .52))";
 
 const defaultState = {
   activeProfile: null,
@@ -196,7 +197,7 @@ function renderDashboardBackground(profile, reset = false) {
   if (reset || dashboardProfileId !== profile.id || dashboardImageIndex >= images.length) dashboardImageIndex = 0;
   dashboardProfileId = profile.id;
   dashboard.classList.toggle("has-photo", images.length > 0);
-  dashboard.style.backgroundImage = images.length ? `linear-gradient(rgba(28, 48, 41, .66), rgba(28, 48, 41, .88)), url(${images[dashboardImageIndex]})` : "";
+  dashboard.style.backgroundImage = images.length ? `${DASHBOARD_OVERLAY}, url(${images[dashboardImageIndex]})` : "";
   if (dots) {
     dots.hidden = images.length < 2;
     dots.innerHTML = images.map((_, index) => `<i class="${index === dashboardImageIndex ? "is-active" : ""}"></i>`).join("");
@@ -209,9 +210,9 @@ function renderDashboardBackground(profile, reset = false) {
       const latestImages = dashboardImages(latestProfile);
       if (!latestProfile || latestProfile.id !== dashboardProfileId || latestImages.length < 2) return;
       dashboardImageIndex = (dashboardImageIndex + 1) % latestImages.length;
-      dashboard.style.backgroundImage = `linear-gradient(rgba(28, 48, 41, .66), rgba(28, 48, 41, .88)), url(${latestImages[dashboardImageIndex]})`;
+      dashboard.style.backgroundImage = `${DASHBOARD_OVERLAY}, url(${latestImages[dashboardImageIndex]})`;
       dots?.querySelectorAll("i").forEach((dot, index) => dot.classList.toggle("is-active", index === dashboardImageIndex));
-    }, 6000);
+    }, 3000);
   }
 }
 
@@ -965,13 +966,22 @@ function goalAdvice() {
 function renderGoalAdvice() {
   const suggestions = goalAdvice();
   currentAdvice %= suggestions.length;
-  const advice = suggestions[currentAdvice];
-  document.querySelector("#advice-title").textContent = advice.title;
-  document.querySelector("#advice-body").textContent = advice.body;
-  document.querySelector("#advice-action").textContent = advice.action;
-  document.querySelector("#advice-observe").textContent = advice.observe;
-  document.querySelector(".source-note").textContent = advice.source;
-  document.querySelector("#refresh-advice").textContent = `换一条 ${currentAdvice + 1}/${suggestions.length}`;
+  const carousel = document.querySelector("#advice-carousel");
+  document.querySelector("#advice-track").innerHTML = suggestions.map((advice, index) => `<article class="advice-card"><div class="advice-mark">${String(index + 1).padStart(2, "0")}</div><div class="advice-copy"><h3>${escapeHtml(advice.title)}</h3><p>${escapeHtml(advice.body)}</p><div class="advice-plan"><div><span>今天怎么做</span><p>${escapeHtml(advice.action)}</p></div><div><span>观察重点</span><p>${escapeHtml(advice.observe)}</p></div></div><span class="source-note">${escapeHtml(advice.source)}</span></div></article>`).join("");
+  document.querySelector("#advice-dots").innerHTML = suggestions.map((_, index) => `<button type="button" class="${index === currentAdvice ? "is-active" : ""}" data-advice-index="${index}" aria-label="查看第 ${index + 1} 条建议"></button>`).join("");
+  const updatePosition = (index) => {
+    currentAdvice = Math.max(0, Math.min(suggestions.length - 1, index));
+    document.querySelector("#advice-position").textContent = `${currentAdvice + 1} / ${suggestions.length}`;
+    document.querySelectorAll("[data-advice-index]").forEach((dot) => dot.classList.toggle("is-active", Number(dot.dataset.adviceIndex) === currentAdvice));
+  };
+  carousel.scrollLeft = currentAdvice * carousel.clientWidth;
+  carousel.onscroll = () => updatePosition(Math.round(carousel.scrollLeft / Math.max(1, carousel.clientWidth)));
+  document.querySelectorAll("[data-advice-index]").forEach((dot) => dot.addEventListener("click", () => {
+    const index = Number(dot.dataset.adviceIndex);
+    carousel.scrollTo({ left: index * carousel.clientWidth, behavior: "smooth" });
+    updatePosition(index);
+  }));
+  updatePosition(currentAdvice);
 }
 
 function renderMealSelection(foods) {
@@ -1094,7 +1104,8 @@ function openProfiles() {
   const backupText = state.lastBackupAt ? `上次备份：${new Date(state.lastBackupAt).toLocaleDateString("zh-CN")}` : "尚未备份，建议每周导出一次";
   const backgrounds = dashboardImages(current);
   const backgroundPreview = backgrounds[0] || "";
-  document.querySelector("#modal-content").innerHTML = `<div class="goal-summary"><span><small>当前目标</small><strong>${current.targetWeight} kg · ${current.planWeeks} 周计划</strong></span><button type="button" id="edit-goal">调整</button></div><div class="personal-settings"><button type="button" id="choose-avatar"><span class="personal-preview avatar-preview ${current.avatarData ? "has-image" : ""}" ${current.avatarData ? `style="background-image:url(${current.avatarData})"` : ""}>${current.avatarData ? "" : current.initial}</span><b>更换头像</b><small>方形图片效果最佳</small></button><button type="button" id="choose-dashboard"><span class="personal-preview dashboard-preview ${backgroundPreview ? "has-image" : ""}" ${backgroundPreview ? `style="background-image:url(${backgroundPreview})"` : ""}>▣</span><b>背景轮播</b><small>${backgrounds.length ? `已添加 ${backgrounds.length} 张，可继续添加` : "可一次选择多张图片"}</small></button><input id="avatar-file" type="file" accept="image/*" hidden /><input id="dashboard-file" type="file" accept="image/*" multiple hidden /></div>${backgrounds.length ? `<div class="dashboard-library"><span>每 6 秒自动切换，最多保存 6 张</span><button type="button" id="clear-dashboard">清空背景</button></div>` : ""}<div class="profile-list">${state.profiles.map((profile) => `<button class="profile-item ${profile.id === state.activeProfile ? "is-current" : ""}" data-profile="${profile.id}"><span class="avatar avatar-${profile.color === "mint" ? "mint" : "coral"} ${profile.avatarData ? "has-image" : ""}" ${profile.avatarData ? `style="background-image:url(${profile.avatarData})"` : ""}>${profile.avatarData ? "" : profile.initial}</span><span><strong>${profile.name}</strong><small>${profile.id === state.activeProfile ? "当前档案" : "本机独立数据"}</small></span><span class="profile-lock">⌑</span></button>`).join("")}</div><button class="primary-button" id="add-profile">＋ 新建本地档案</button><section class="data-tools"><div><b>数据与设备</b><small>${backupText}</small></div><div class="data-tool-grid"><button type="button" id="change-pin">修改访问密码</button><button type="button" id="install-app">安装到手机</button><button type="button" id="export-backup">导出备份</button><button type="button" id="import-backup">恢复备份</button>${isLocalPreview() ? `<button type="button" id="migrate-live">迁移到正式版</button>` : ""}</div><p>备份包含所有档案、记录、头像和背景图，请妥善保管。</p><input id="backup-file" type="file" accept="application/json,.json" hidden /></section>`;
+  const backgroundManager = backgrounds.length ? `<section class="dashboard-library"><div class="dashboard-library-head"><span>每 3 秒自动切换 · 最多 6 张</span><button type="button" id="clear-dashboard">清空全部</button></div><div class="dashboard-thumbnails">${backgrounds.map((image, index) => `<div class="dashboard-thumbnail" style="background-image:url(${image})"><span>${index + 1}</span><div><button type="button" data-replace-background="${index}" aria-label="替换第 ${index + 1} 张背景" title="替换">↻</button><button type="button" data-delete-background="${index}" aria-label="删除第 ${index + 1} 张背景" title="删除">×</button></div></div>`).join("")}</div><input id="dashboard-replace-file" type="file" accept="image/*" hidden /></section>` : "";
+  document.querySelector("#modal-content").innerHTML = `<div class="goal-summary"><span><small>当前目标</small><strong>${current.targetWeight} kg · ${current.planWeeks} 周计划</strong></span><button type="button" id="edit-goal">调整</button></div><div class="personal-settings"><button type="button" id="choose-avatar"><span class="personal-preview avatar-preview ${current.avatarData ? "has-image" : ""}" ${current.avatarData ? `style="background-image:url(${current.avatarData})"` : ""}>${current.avatarData ? "" : current.initial}</span><b>更换头像</b><small>方形图片效果最佳</small></button><button type="button" id="choose-dashboard"><span class="personal-preview dashboard-preview ${backgroundPreview ? "has-image" : ""}" ${backgroundPreview ? `style="background-image:url(${backgroundPreview})"` : ""}>▣</span><b>背景轮播</b><small>${backgrounds.length ? `已添加 ${backgrounds.length} 张，可继续添加` : "可一次选择多张图片"}</small></button><input id="avatar-file" type="file" accept="image/*" hidden /><input id="dashboard-file" type="file" accept="image/*" multiple hidden /></div>${backgroundManager}<div class="profile-list">${state.profiles.map((profile) => `<button class="profile-item ${profile.id === state.activeProfile ? "is-current" : ""}" data-profile="${profile.id}"><span class="avatar avatar-${profile.color === "mint" ? "mint" : "coral"} ${profile.avatarData ? "has-image" : ""}" ${profile.avatarData ? `style="background-image:url(${profile.avatarData})"` : ""}>${profile.avatarData ? "" : profile.initial}</span><span><strong>${profile.name}</strong><small>${profile.id === state.activeProfile ? "当前档案" : "本机独立数据"}</small></span><span class="profile-lock">⌑</span></button>`).join("")}</div><button class="primary-button" id="add-profile">＋ 新建本地档案</button><section class="data-tools"><div><b>数据与设备</b><small>${backupText}</small></div><div class="data-tool-grid"><button type="button" id="change-pin">修改访问密码</button><button type="button" id="install-app">安装到手机</button><button type="button" id="export-backup">导出备份</button><button type="button" id="import-backup">恢复备份</button>${isLocalPreview() ? `<button type="button" id="migrate-live">迁移到正式版</button>` : ""}</div><p>备份包含所有档案、记录、头像和背景图，请妥善保管。</p><input id="backup-file" type="file" accept="application/json,.json" hidden /></section>`;
   modal.hidden = false;
   document.querySelectorAll("[data-profile]").forEach((button) => button.addEventListener("click", () => {
     const selected = state.profiles.find((profile) => profile.id === button.dataset.profile);
@@ -1122,6 +1133,28 @@ function openProfiles() {
       renderHome(); openProfiles(); showToast(`已添加 ${compressed.length} 张背景图`);
     } catch (error) { showToast(error.message); }
   });
+  document.querySelectorAll("[data-replace-background]").forEach((button) => button.addEventListener("click", () => {
+    const input = document.querySelector("#dashboard-replace-file");
+    input.dataset.replaceIndex = button.dataset.replaceBackground;
+    input.click();
+  }));
+  document.querySelector("#dashboard-replace-file")?.addEventListener("change", async (event) => {
+    try {
+      const index = Number(event.target.dataset.replaceIndex);
+      const replacement = await compressImage(event.target.files[0], 1200, 700, .68);
+      current.dashboardBackgrounds[index] = replacement;
+      dashboardImageIndex = index;
+      if (!saveState()) return;
+      renderHome(); openProfiles(); showToast(`第 ${index + 1} 张背景已替换`);
+    } catch (error) { showToast(error.message); }
+  });
+  document.querySelectorAll("[data-delete-background]").forEach((button) => button.addEventListener("click", () => {
+    const index = Number(button.dataset.deleteBackground);
+    if (!window.confirm(`确定删除第 ${index + 1} 张背景吗？`)) return;
+    current.dashboardBackgrounds.splice(index, 1);
+    dashboardImageIndex = Math.min(dashboardImageIndex, Math.max(0, current.dashboardBackgrounds.length - 1));
+    saveState(); renderHome(); openProfiles(); showToast("背景图已删除");
+  }));
   document.querySelector("#clear-dashboard")?.addEventListener("click", () => {
     if (!window.confirm("确定清空全部看板背景吗？")) return;
     current.dashboardBackgrounds = [];
@@ -1311,15 +1344,11 @@ function closeModal() {
   document.querySelector("#modal-backdrop").hidden = true;
   setNavigation(currentView);
 }
-function rotateAdvice() { currentAdvice = (currentAdvice + 1) % goalAdvice().length; renderGoalAdvice(); }
-
 document.querySelectorAll("[data-record]").forEach((button) => button.addEventListener("click", () => openModal(button.dataset.record)));
 document.querySelector("#profile-trigger").addEventListener("click", openProfiles);
 document.querySelector("#modal-close").addEventListener("click", closeModal);
 document.querySelector("#modal-backdrop").addEventListener("click", (event) => { if (event.target.id === "modal-backdrop") closeModal(); });
-document.querySelector("#refresh-advice").addEventListener("click", rotateAdvice);
 document.querySelector("#complete-calorie-profile").addEventListener("click", () => { document.querySelector("#modal-backdrop").hidden = false; openGoalEditor(); });
-document.querySelector("#advice-done").addEventListener("click", (event) => { event.currentTarget.classList.toggle("is-done"); showToast(event.currentTarget.classList.contains("is-done") ? "建议已完成" : "已恢复待办"); });
 document.querySelectorAll("[data-tab]").forEach((button) => button.addEventListener("click", () => {
   const tab = button.dataset.tab;
   if (tab === "home" || tab === "records" || tab === "trend") return showAppView(tab);

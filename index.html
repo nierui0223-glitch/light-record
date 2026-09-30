@@ -2,7 +2,7 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta name="theme-color" content="#f6f5f1" />
     <meta name="description" content="记录体重、饮食、饮水与睡眠的个人减脂管理工具" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -11,7 +11,7 @@
     <title>sherry的掉秤日记</title>
     <link rel="manifest" href="manifest.webmanifest?v=7" />
     <link rel="apple-touch-icon" href="icons/icon-192.png" />
-    <link rel="stylesheet" href="styles.css?v=9" />
+    <link rel="stylesheet" href="styles.css?v=10" />
   </head>
   <body>
     <section class="app-lock" id="app-lock" aria-labelledby="lock-title">
@@ -26,8 +26,9 @@
         <input id="lock-pin" type="password" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="4～6 位数字" />
         <p class="lock-error" id="lock-error" role="alert"></p>
         <button class="primary-button" type="button" id="unlock-app">进入日记</button>
+        <button class="lock-create-button" type="button" id="create-account">创建新账号</button>
       </div>
-      <small>密码仅保存在当前设备</small>
+      <small>每个账号数据独立，密码和记录仅保存在当前设备</small>
     </section>
 
     <main class="app-shell" id="app-shell" hidden>
@@ -68,6 +69,7 @@
           <circle id="sparkline-dot" cx="560" cy="72" r="6" class="sparkline-dot" />
         </svg>
         <div class="chart-labels"><span id="chart-start-label">今天</span><span>今天</span></div>
+        <div class="dashboard-dots" id="dashboard-dots" hidden aria-hidden="true"></div>
       </section>
 
       <section class="quick-section">
@@ -151,6 +153,10 @@
           <div class="advice-copy">
             <h3 id="advice-title">午餐补一份蛋白质</h3>
             <p id="advice-body">今天早餐记录显示蛋白质偏少，午餐可以加一份鸡蛋、鱼肉或豆制品，让下午更稳定。</p>
+            <div class="advice-plan">
+              <div><span>今天怎么做</span><p id="advice-action">下一餐补一掌心优质蛋白。</p></div>
+              <div><span>观察重点</span><p id="advice-observe">连续观察 7 天平均体重和饱腹感。</p></div>
+            </div>
             <span class="source-note">基于：早餐记录 · 最近 3 天饱腹感</span>
           </div>
           <button class="advice-done" id="advice-done" aria-label="完成建议">✓</button>
@@ -182,6 +188,7 @@
           </div>
           <div class="range-control records-range-control" aria-label="记录周期">
             <button class="is-active" type="button" data-records-range="today">今日</button>
+            <button type="button" data-records-range="calendar">日历</button>
             <button type="button" data-records-range="30">30 天</button>
           </div>
         </div>
@@ -209,6 +216,23 @@
           <div class="record-section-heading"><div><span class="record-type-icon record-type-icon--sleep">☾</span><h3>睡眠</h3></div><button type="button" data-add-record="sleep">修改</button></div>
           <div id="records-sleep"></div>
         </section>
+        </div>
+
+        <div class="records-calendar" id="records-calendar" hidden>
+          <section class="calendar-panel" aria-label="每日记录日历">
+            <div class="calendar-heading">
+              <button type="button" id="calendar-prev" aria-label="上个月">‹</button>
+              <strong id="calendar-month-label">本月</strong>
+              <button type="button" id="calendar-next" aria-label="下个月">›</button>
+            </div>
+            <div class="calendar-weekdays" aria-hidden="true"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+            <div class="calendar-grid" id="calendar-grid"></div>
+            <div class="calendar-legend"><span><i class="has-record"></i>有记录</span><span><i></i>无记录</span></div>
+          </section>
+          <section class="calendar-day-detail">
+            <div class="calendar-detail-heading"><div><p class="eyebrow">DAY REVIEW</p><h3 id="calendar-day-title">今日记录</h3></div><span id="calendar-day-status">暂无记录</span></div>
+            <div id="calendar-day-content"></div>
+          </section>
         </div>
 
         <div class="records-history" id="records-history" hidden>
@@ -314,6 +338,6 @@
     </div>
 
     <div class="toast" id="toast" role="status"></div>
-    <script src="app.js?v=9"></script>
+    <script src="app.js?v=10"></script>
   </body>
 </html>

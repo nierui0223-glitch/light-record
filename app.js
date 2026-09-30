@@ -8,8 +8,13 @@ let pendingImportState = null;
 let migrationTimer = null;
 let trendRange = 7;
 let recordsRange = "today";
+let selectedRecordDate = localDateKey();
+let calendarCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 let currentView = "home";
 let hiddenAt = 0;
+let dashboardTimer = null;
+let dashboardProfileId = null;
+let dashboardImageIndex = 0;
 
 const defaultState = {
   activeProfile: null,
@@ -20,11 +25,6 @@ const defaultState = {
 let state = loadState();
 saveState();
 let currentAdvice = 0;
-const adviceList = [
-  { title: "午餐补一份蛋白质", body: "今天早餐记录显示蛋白质偏少，午餐可以加一份鸡蛋、鱼肉或豆制品，让下午更稳定。", source: "基于：早餐记录 · 最近 3 天饱腹感" },
-  { title: "下午先补一杯水", body: "今天饮水完成度还不到一半，先补充 300 ml 水，再判断下午的饥饿感。", source: "基于：饮水进度 · 今日活动水平" },
-  { title: "今晚提前半小时睡", body: "近一周平均睡眠略低于目标，今晚把睡前刷手机的时间提前收尾，帮助恢复。", source: "基于：7 天睡眠 · 体重趋势" }
-];
 
 const commonFoods = [
   { id: "rice", name: "米饭", unit: "1 碗", carbs: 50, protein: 5, fat: 1 },
@@ -105,6 +105,11 @@ function normalizeState(candidate) {
   const today = localDateKey();
 
   saved.profiles.forEach((profile) => {
+    if (!Array.isArray(profile.dashboardBackgrounds)) {
+      profile.dashboardBackgrounds = profile.dashboardBackground ? [profile.dashboardBackground] : [];
+    }
+    profile.dashboardBackgrounds = profile.dashboardBackgrounds.filter(Boolean).slice(0, 6);
+    delete profile.dashboardBackground;
     const existing = saved.records[profile.id];
     if (existing?.days && typeof existing.days === "object") {
       const weightHistory = Array.isArray(existing.weightHistory) ? existing.weightHistory : [];
@@ -180,6 +185,36 @@ function activeRecord() {
   return record;
 }
 
+function dashboardImages(profile) {
+  return Array.isArray(profile?.dashboardBackgrounds) ? profile.dashboardBackgrounds.filter(Boolean) : [];
+}
+
+function renderDashboardBackground(profile, reset = false) {
+  const dashboard = document.querySelector(".hero-card");
+  const dots = document.querySelector("#dashboard-dots");
+  const images = dashboardImages(profile);
+  if (reset || dashboardProfileId !== profile.id || dashboardImageIndex >= images.length) dashboardImageIndex = 0;
+  dashboardProfileId = profile.id;
+  dashboard.classList.toggle("has-photo", images.length > 0);
+  dashboard.style.backgroundImage = images.length ? `linear-gradient(rgba(28, 48, 41, .66), rgba(28, 48, 41, .88)), url(${images[dashboardImageIndex]})` : "";
+  if (dots) {
+    dots.hidden = images.length < 2;
+    dots.innerHTML = images.map((_, index) => `<i class="${index === dashboardImageIndex ? "is-active" : ""}"></i>`).join("");
+  }
+  window.clearInterval(dashboardTimer);
+  dashboardTimer = null;
+  if (images.length > 1) {
+    dashboardTimer = window.setInterval(() => {
+      const latestProfile = activeProfile();
+      const latestImages = dashboardImages(latestProfile);
+      if (!latestProfile || latestProfile.id !== dashboardProfileId || latestImages.length < 2) return;
+      dashboardImageIndex = (dashboardImageIndex + 1) % latestImages.length;
+      dashboard.style.backgroundImage = `linear-gradient(rgba(28, 48, 41, .66), rgba(28, 48, 41, .88)), url(${latestImages[dashboardImageIndex]})`;
+      dots?.querySelectorAll("i").forEach((dot, index) => dot.classList.toggle("is-active", index === dashboardImageIndex));
+    }, 6000);
+  }
+}
+
 function renderHome() {
   const profile = activeProfile();
   const record = activeRecord();
@@ -189,9 +224,7 @@ function renderHome() {
   avatar.textContent = profile.avatarData ? "" : profile.initial;
   avatar.className = `avatar avatar-${profile.color === "mint" ? "mint" : "coral"}${profile.avatarData ? " has-image" : ""}`;
   avatar.style.backgroundImage = profile.avatarData ? `url(${profile.avatarData})` : "";
-  const dashboard = document.querySelector(".hero-card");
-  dashboard.classList.toggle("has-photo", Boolean(profile.dashboardBackground));
-  dashboard.style.backgroundImage = profile.dashboardBackground ? `linear-gradient(rgba(28, 48, 41, .66), rgba(28, 48, 41, .88)), url(${profile.dashboardBackground})` : "";
+  renderDashboardBackground(profile, dashboardProfileId !== profile.id);
   document.querySelector("#current-weight").textContent = Number(record.weight).toFixed(1);
   document.querySelector("#average-weight").textContent = `${Number(record.average).toFixed(1)} kg`;
   const weightDifference = Number(record.weight) - Number(record.average);
@@ -340,18 +373,81 @@ function renderHistoryRecords() {
   }).join("") : `<div class="records-empty">近 30 天还没有可展示的记录</div>`;
 }
 
+function renderCalendarDayDetail(dateKey) {
+  const record = activeProfileStore()?.days?.[dateKey];
+  const title = historyDateLabel(dateKey);
+  const isToday = dateKey === localDateKey();
+  document.querySelector("#calendar-day-title").textContent = `${title}${isToday ? " · 今天" : ""}`;
+  document.querySelector("#calendar-day-status").textContent = hasDailyData(record) ? "已有记录" : "暂无记录";
+  if (!hasDailyData(record)) {
+    document.querySelector("#calendar-day-content").innerHTML = `<div class="calendar-empty-detail"><strong>这一天还没有记录</strong><p>有记录的日期会在日历中显示实心圆点，方便你快速回看饮食与睡眠。</p></div>`;
+    return;
+  }
+  const meals = record.mealRecords || [];
+  const waterLogs = record.waterLogs || [];
+  const summary = macroSummary(meals.flatMap((meal) => meal.foods || []));
+  const stats = [
+    record.weightRecorded ? `<div><span>体重</span><strong>${Number(record.weight).toFixed(1)} kg</strong></div>` : "",
+    meals.length ? `<div><span>摄入</span><strong>${summary.calories} kcal</strong></div>` : "",
+    Number(record.water) ? `<div><span>饮水</span><strong>${Number(record.water)} ml</strong></div>` : "",
+    record.sleep ? `<div><span>睡眠</span><strong>${sleepHours(record.sleep).toFixed(1)} h</strong></div>` : ""
+  ].filter(Boolean).join("");
+  const mealDetails = meals.length ? meals.map((meal) => {
+    const mealSummary = meal.summary || macroSummary(meal.foods || []);
+    const foods = (meal.foods || []).map((food) => `${escapeHtml(food.name)} ×${Number(food.quantity || 1)}`).join("、");
+    return `<div class="calendar-log"><div><strong>${escapeHtml(meal.mealTime || "一餐")}</strong><span>${mealSummary.calories} kcal</span></div><p>${foods || "未保存食物明细"}</p><small>碳水 ${mealSummary.carbsPercent}% · 蛋白质 ${mealSummary.proteinPercent}% · 脂肪 ${mealSummary.fatPercent}%</small></div>`;
+  }).join("") : `<p class="calendar-missing">没有饮食记录</p>`;
+  const waterDetails = waterLogs.length
+    ? `<div class="calendar-water-list">${waterLogs.map((log) => `<span>${escapeHtml(log.name || "饮品")} ${Number(log.amount)} ml</span>`).join("")}</div>`
+    : Number(record.water) ? `<p class="calendar-missing">饮水合计 ${Number(record.water)} ml</p>` : `<p class="calendar-missing">没有饮水记录</p>`;
+  document.querySelector("#calendar-day-content").innerHTML = `<div class="calendar-day-stats">${stats}</div><div class="calendar-detail-section"><h4>饮食</h4>${mealDetails}</div><div class="calendar-detail-section"><h4>饮水</h4>${waterDetails}</div><div class="calendar-detail-section"><h4>睡眠</h4><p class="calendar-missing">${record.sleep ? escapeHtml(record.sleep) : "没有睡眠记录"}</p></div>`;
+}
+
+function renderCalendar() {
+  const year = calendarCursor.getFullYear();
+  const month = calendarCursor.getMonth();
+  const today = localDateKey();
+  const currentMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const leading = (new Date(year, month, 1).getDay() + 6) % 7;
+  document.querySelector("#calendar-month-label").textContent = `${year} 年 ${month + 1} 月`;
+  document.querySelector("#calendar-next").disabled = calendarCursor >= currentMonth;
+  const cells = Array.from({ length: leading }, () => `<span class="calendar-empty-cell"></span>`);
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const dateKey = localDateKey(new Date(year, month, day));
+    const isFuture = dateKey > today;
+    const hasRecord = hasDailyData(activeProfileStore()?.days?.[dateKey]);
+    const classes = [hasRecord ? "has-record" : "no-record", dateKey === selectedRecordDate ? "is-selected" : "", dateKey === today ? "is-today" : ""].filter(Boolean).join(" ");
+    const status = hasRecord ? "有记录" : "无记录";
+    cells.push(`<button type="button" class="${classes}" data-calendar-date="${dateKey}" ${isFuture ? "disabled" : ""} aria-label="${month + 1} 月 ${day} 日，${status}"><span>${day}</span><i></i></button>`);
+  }
+  document.querySelector("#calendar-grid").innerHTML = cells.join("");
+  document.querySelectorAll("[data-calendar-date]").forEach((button) => button.addEventListener("click", () => {
+    selectedRecordDate = button.dataset.calendarDate;
+    renderCalendar();
+  }));
+  renderCalendarDayDetail(selectedRecordDate);
+}
+
 function renderRecords() {
   const record = activeRecord();
   if (!record) return;
   const date = new Date();
   const isHistory = recordsRange === "30";
-  document.querySelector("#records-today").hidden = isHistory;
+  const isCalendar = recordsRange === "calendar";
+  document.querySelector("#records-today").hidden = isHistory || isCalendar;
+  document.querySelector("#records-calendar").hidden = !isCalendar;
   document.querySelector("#records-history").hidden = !isHistory;
-  document.querySelector("#records-view-title").textContent = isHistory ? "近 30 天记录" : "今日记录";
+  document.querySelector("#records-view-title").textContent = isHistory ? "近 30 天记录" : isCalendar ? "记录日历" : "今日记录";
   document.querySelectorAll("[data-records-range]").forEach((button) => button.classList.toggle("is-active", button.dataset.recordsRange === recordsRange));
   if (isHistory) {
     document.querySelector("#records-date-label").textContent = "回看饮食、睡眠与每日状态";
     renderHistoryRecords();
+    return;
+  }
+  if (isCalendar) {
+    document.querySelector("#records-date-label").textContent = "选择日期查看当天的完整记录";
+    renderCalendar();
     return;
   }
   document.querySelector("#records-date-label").textContent = `${date.getMonth() + 1} 月 ${date.getDate()} 日已添加的全部内容`;
@@ -793,41 +889,77 @@ function sleepDuration(start, end) {
 function goalAdvice() {
   const profile = activeProfile();
   const record = activeRecord();
+  const store = activeProfileStore();
+  const dates = periodDates(7);
+  const entries = dates.map((date) => ({ date, record: store?.days?.[date] })).filter((entry) => hasDailyData(entry.record));
+  const mealEntries = entries.filter((entry) => entry.record.mealRecords?.length);
+  const sleepEntries = entries.map((entry) => sleepHours(entry.record.sleep)).filter(Boolean);
+  const allFoods = mealEntries.flatMap((entry) => entry.record.mealRecords.flatMap((meal) => meal.foods || []));
+  const weeklyMacros = macroSummary(allFoods);
+  const averageSleep = sleepEntries.length ? sleepEntries.reduce((sum, value) => sum + value, 0) / sleepEntries.length : 0;
+  const waterEntries = entries.filter((entry) => Number(entry.record.water));
+  const averageWaterRate = waterEntries.length ? waterEntries.reduce((sum, entry) => sum + Math.min(1.2, Number(entry.record.water) / Number(entry.record.waterGoal || 1800)), 0) / waterEntries.length : 0;
+  const weightEntries = (store?.weightHistory || []).filter((entry) => entry.date >= dates[0] && entry.date <= dates.at(-1));
+  const weightSpan = weightEntries.length > 1 ? Math.max(1, (new Date(`${weightEntries.at(-1).date}T00:00:00`) - new Date(`${weightEntries[0].date}T00:00:00`)) / 86400000) : 0;
+  const actualWeeklyLoss = weightSpan ? (Number(weightEntries[0].weight) - Number(weightEntries.at(-1).weight)) / weightSpan * 7 : null;
   const remaining = Math.max(0, record.weight - profile.targetWeight);
   const elapsedWeeks = Math.max(0, Math.floor((Date.now() - new Date(profile.startedAt).getTime()) / (7 * 24 * 60 * 60 * 1000)));
   const remainingWeeks = Math.max(1, profile.planWeeks - elapsedWeeks);
   const weeklyTarget = remaining / remainingWeeks;
   const safeWeekly = Math.min(.75, profile.startWeight * .01);
-  const latestMeal = record.mealRecords.at(-1);
-  const latestMealSummary = latestMeal ? latestMeal.summary || macroSummary(latestMeal.foods || []) : null;
-  const latestMealLabel = latestMeal?.mealTime || "最近一餐";
-  const sleep = sleepHours(record.sleep);
+  const plan = dailyCaloriePlan(profile, record);
+  const todayFoods = record.mealRecords.flatMap((meal) => meal.foods || []);
+  const todaySummary = macroSummary(todayFoods);
+  const proteinGoal = Math.round(Number(record.weight) * 1.2);
+  const hour = new Date().getHours();
   const suggestions = [];
+  const add = (score, title, body, action, observe, source) => suggestions.push({ score, title, body, action, observe, source });
 
-  if (weeklyTarget > safeWeekly) {
+  if (remaining <= .1) {
+    add(100, "目标已达到，先转入稳定期", `当前体重已达到 ${profile.targetWeight} kg 附近。此时继续扩大热量缺口会增加反弹和疲劳风险，重点应从“继续减”转为“稳定保持”。`, "未来 2 周把摄入逐步靠近维持消耗，继续保持蛋白质和规律作息。", "观察 7 天平均体重是否稳定在目标上下 0.5 kg。", "基于：当前体重 · 目标体重 · 维持消耗估算");
+  } else if (weeklyTarget > safeWeekly) {
     const recommendedWeeks = Math.ceil(remaining / safeWeekly);
-    suggestions.push({ title: "先把减脂节奏调稳", body: `按剩余周期需要每周减 ${weeklyTarget.toFixed(2)} kg，节奏偏快。建议给剩余目标至少留出 ${recommendedWeeks} 周，优先保证饮食和睡眠可持续。`, source: `基于：距离目标 ${remaining.toFixed(1)} kg · 剩余 ${remainingWeeks} 周` });
+    add(95, "计划速度偏快，先降低压力", `距离目标还有 ${remaining.toFixed(1)} kg，按剩余周期需要每周下降 ${weeklyTarget.toFixed(2)} kg，超过当前较稳妥的约 ${safeWeekly.toFixed(2)} kg。过快压低摄入容易影响睡眠、训练和持续性。`, `把剩余周期调整到至少 ${recommendedWeeks} 周，今天不要额外跳餐或大幅减少主食。`, "连续观察两周的 7 天平均体重，而不是单日数字。", `基于：剩余 ${remainingWeeks} 周 · 当前体重的 1% 上限`);
   } else {
-    suggestions.push({ title: `距离目标还有 ${remaining.toFixed(1)} kg`, body: `按剩余计划，每周约下降 ${weeklyTarget.toFixed(2)} kg 即可。今天不需要追求大幅少吃，保持规律三餐并继续观察 7 天平均体重。`, source: `基于：目标 ${profile.targetWeight} kg · 剩余 ${remainingWeeks} 周` });
+    add(45, `按每周 ${weeklyTarget.toFixed(2)} kg 的节奏推进`, `距离目标还有 ${remaining.toFixed(1)} kg，目前计划速度在可持续范围内。单日体重会受水分和盐分影响，不需要因一天波动临时大幅少吃。`, "保持三餐结构稳定，只针对连续 2 周的趋势做小幅调整。", "看 7 天平均体重是否大致按计划下降。", `基于：目标 ${profile.targetWeight} kg · 剩余 ${remainingWeeks} 周`);
   }
 
-  if (!latestMeal) {
-    suggestions.push({ title: "先记录一顿完整饮食", body: "添加具体食物后，我会根据碳水、蛋白质和脂肪供能占比，给出更贴近目标的调整建议。", source: "基于：今日尚无具体食物记录" });
-  } else if (latestMealSummary.proteinPercent < 20) {
-    suggestions.push({ title: "下一餐增加优质蛋白", body: `最近一餐蛋白质供能约 ${latestMealSummary.proteinPercent}%，略低。可以增加鸡蛋、鱼虾、瘦肉或豆制品，同时保持主食份量稳定。`, source: `基于：${latestMealLabel}营养估算 · 个人减脂目标` });
-  } else if (latestMealSummary.fatPercent > 35) {
-    suggestions.push({ title: "下一餐减少隐形油脂", body: `最近一餐脂肪供能约 ${latestMealSummary.fatPercent}%，偏高。下一餐优先清蒸或炖煮，并减少酱料、油炸和坚果叠加。`, source: `基于：${latestMealLabel}营养估算 · 个人减脂目标` });
-  } else {
-    suggestions.push({ title: "这餐结构可以保持", body: `最近一餐蛋白质供能 ${latestMealSummary.proteinPercent}%、脂肪 ${latestMealSummary.fatPercent}%，整体较平衡。下一餐继续保持具体食物和份量记录。`, source: `基于：${latestMealLabel}营养估算 · 个人减脂目标` });
+  if (actualWeeklyLoss !== null && actualWeeklyLoss > safeWeekly * 1.15) {
+    add(92, "最近体重下降速度偏快", `按近 ${weightSpan + 1} 天记录折算，每周约下降 ${actualWeeklyLoss.toFixed(2)} kg，高于当前建议上限 ${safeWeekly.toFixed(2)} kg。需要先排除短期水分波动，暂不继续降低热量。`, "保证三餐、蛋白质和睡眠，未来 3 天保持当前摄入。", "若下一周均值仍快速下降，考虑增加 100～150 kcal。", `基于：${weightEntries.length} 次体重记录 · 7 天变化速度`);
+  } else if (actualWeeklyLoss !== null && actualWeeklyLoss < weeklyTarget * .45 && mealEntries.length >= 5) {
+    add(72, "体重趋势暂时慢于计划", `近 7 天折算下降约 ${Math.max(0, actualWeeklyLoss).toFixed(2)} kg，低于计划节奏，但一周仍可能受经期、盐分和排便影响，不适合立刻大幅减量。`, "先检查饮料、烹调油和零食是否完整记录；若连续 2 周不变，再减少约 100 kcal。", "对比下周同一天的 7 天平均体重。", `基于：${weightEntries.length} 次体重记录 · 饮食记录 ${mealEntries.length} 天`);
+
   }
 
-  if (sleep && sleep < 7) {
-    const minutes = Math.round((7.5 - sleep) * 60);
-    suggestions.push({ title: "今晚优先补足睡眠", body: `昨晚睡了约 ${sleep.toFixed(1)} 小时。今晚尝试提前 ${Math.min(60, Math.max(20, minutes))} 分钟上床，避免用少吃来弥补体重波动。`, source: "基于：昨晚睡眠 · 减脂恢复需求" });
+  if (!todayFoods.length) {
+    add(76, "先完成一餐的具体记录", "今天还没有具体食物数据，当前无法判断热量和营养结构。只勾选“吃过”不足以支持个性化调整。", "下一餐记录食物名称和大致份量，优先记主食、蛋白质和明显油脂。", "记录后查看今日热量与三大营养素占比。", "基于：今日尚无具体食物记录");
   } else {
-    suggestions.push({ title: "保持稳定的入睡时间", body: "睡眠已接近建议范围，今晚尽量在相近时间入睡。稳定作息有助于控制食欲，也更容易坚持当前计划。", source: "基于：睡眠记录 · 个人减脂周期" });
+    if (todaySummary.totals.protein < proteinGoal * .75 && hour >= 16) {
+      const gap = Math.max(10, Math.round(proteinGoal - todaySummary.totals.protein));
+      add(88, `今天蛋白质还差约 ${gap} g`, `当前估算蛋白质 ${Math.round(todaySummary.totals.protein)} g，低于按体重估算的基础目标约 ${proteinGoal} g。减脂期蛋白质不足会影响饱腹感和瘦体重维持。`, "晚餐或加餐补一份鱼虾、瘦肉、豆制品或无糖高蛋白奶，避免同时叠加高油酱料。", "观察晚间饥饿感，以及 7 天蛋白质供能是否回到 20%～30%。", "基于：今日具体食物 · 当前体重 × 1.2 g 估算");
+    } else if (todaySummary.proteinPercent < 20) {
+      add(80, "下一餐提高蛋白质占比", `今日蛋白质供能约 ${todaySummary.proteinPercent}%，低于 20%～30% 的参考范围。问题更可能在餐盘结构，而不是总量本身。`, "下一餐用一掌心鱼虾、瘦肉或豆制品替换一部分纯主食或高油配菜。", "晚餐后再次查看蛋白质占比是否达到 20% 以上。", "基于：今日全部餐次营养估算");
+    }
+    if (todaySummary.fatPercent > 35) add(78, "今天优先减少隐形油脂", `脂肪供能约 ${todaySummary.fatPercent}%，高于 25%～35% 的参考范围。坚果、酱料、油炸和肥肉容易在份量不大时推高热量。`, "下一餐选清蒸、炖煮或少油炒，只减少一项高油食物，不同时削减蛋白质。", "观察全天脂肪占比能否回到 35% 以下。", "基于：今日全部餐次营养估算");
+    if (plan.complete && todaySummary.calories > plan.upper) add(90, "今日摄入已超过建议上沿", `当前估算 ${todaySummary.calories} kcal，比建议上沿 ${plan.upper} kcal 高约 ${todaySummary.calories - plan.upper} kcal。一天超出并不会破坏计划，不需要用极端节食补偿。`, "剩余时间选择无糖饮品；如确实饥饿，优先蔬菜和低脂蛋白质。", "明天恢复正常目标，并看一周平均摄入而非惩罚性减量。", "基于：今日摄入 · 个体热量范围");
+    else if (plan.complete && hour >= 19 && todaySummary.calories < plan.lower * .75) add(82, "今天摄入可能偏低", `当前估算 ${todaySummary.calories} kcal，不到建议下沿 ${plan.lower} kcal 的 75%。若记录完整，长期过低可能影响恢复与计划持续性。`, "确认是否漏记烹调油、饮料或加餐；若没有漏记，补一顿含主食和蛋白质的正常餐。", "观察明天的精力、饥饿感和睡眠，不追求连续低摄入。", "基于：当前时间 · 今日摄入 · 基础代谢估算");
   }
-  return weeklyTarget > safeWeekly ? suggestions : [suggestions[1], suggestions[2], suggestions[0]];
+
+  if (sleepEntries.length >= 3 && averageSleep < 7) {
+    const minutes = Math.min(60, Math.max(20, Math.round((7.5 - averageSleep) * 30)));
+    add(86, "本周先修复睡眠，再压热量", `近 7 天记录了 ${sleepEntries.length} 晚，平均 ${averageSleep.toFixed(1)} 小时。睡眠不足会放大饥饿感，也会让单日体重更容易波动。`, `今晚把上床时间提前 ${minutes} 分钟，并在睡前 30 分钟结束刷手机和进食。`, "连续 3 晚记录睡眠，目标先把平均值提升到 7 小时。", `基于：近 7 天 ${sleepEntries.length} 条睡眠记录`);
+  } else if (!record.sleep && hour >= 18) {
+    add(54, "今晚把睡眠也记下来", "睡眠是判断食欲、恢复和体重波动的重要背景数据。缺少睡眠记录时，饮食建议容易只看到摄入而忽略恢复。", "睡前设定计划入睡时间，明早补录实际起床时间。", "积累至少 3 晚后再比较平均睡眠和食欲。", "基于：今日尚无睡眠记录");
+  }
+
+  const expectedWater = Number(record.waterGoal || 1800) * Math.max(.25, Math.min(1, (hour - 7) / 13));
+  if (hour >= 10 && Number(record.water) < expectedWater * .7) add(74, "饮水进度落后于今天时间", `现在的饮水是 ${Number(record.water)} ml，按当前时间估算，进度低于全天 ${record.waterGoal} ml 目标。分次补水通常比临睡前集中喝更舒服。`, "接下来 1 小时先喝 250～300 ml 白水或无糖茶，之后每 2～3 小时补一次。", "晚餐前达到目标的约 70%，睡前避免集中大量饮水。", "基于：当前时间 · 今日饮水进度");
+  else if (waterEntries.length >= 3 && averageWaterRate < .75) add(60, "本周饮水完成度偏低", `近 7 天有 ${waterEntries.length} 天饮水记录，平均只完成约 ${Math.round(averageWaterRate * 100)}%。记录显示这更像持续习惯，而不是单日遗漏。`, "把 600 ml 分到起床后、午餐前和下午三个固定时点。", "下一周让至少 5 天达到目标的 90%。", `基于：近 7 天 ${waterEntries.length} 条饮水记录`);
+
+  if (mealEntries.length < 4) add(42, "先提升记录连续性", `近 7 天只有 ${mealEntries.length} 天保存了具体饮食。数据不足时，体重变化很难和真实摄入对应，建议会更保守。`, "未来 3 天至少完整记录两餐，不必追求克数精确。", "当一周达到 5 天记录后，再判断平均热量与营养结构。", "基于：近 7 天饮食记录完整度");
+  else if (weeklyMacros.proteinPercent >= 20 && weeklyMacros.proteinPercent <= 30 && weeklyMacros.fatPercent <= 35 && averageSleep >= 7 && averageWaterRate >= .8) add(50, "这周的基础节奏值得保持", `近 7 天蛋白质约 ${weeklyMacros.proteinPercent}%、脂肪约 ${weeklyMacros.fatPercent}%，睡眠和饮水也基本稳定。此时频繁改计划反而难判断什么真正有效。`, "保持当前餐盘和作息 7 天，只做份量上的小调整。", "以 7 天平均体重、腰围和饥饿感共同判断效果。", "基于：近 7 天饮食 · 睡眠 · 饮水综合记录");
+
+  return suggestions.sort((a, b) => b.score - a.score);
 }
 
 function renderGoalAdvice() {
@@ -836,7 +968,10 @@ function renderGoalAdvice() {
   const advice = suggestions[currentAdvice];
   document.querySelector("#advice-title").textContent = advice.title;
   document.querySelector("#advice-body").textContent = advice.body;
-  document.querySelector("#advice-body").nextElementSibling.textContent = advice.source;
+  document.querySelector("#advice-action").textContent = advice.action;
+  document.querySelector("#advice-observe").textContent = advice.observe;
+  document.querySelector(".source-note").textContent = advice.source;
+  document.querySelector("#refresh-advice").textContent = `换一条 ${currentAdvice + 1}/${suggestions.length}`;
 }
 
 function renderMealSelection(foods) {
@@ -957,7 +1092,9 @@ function openProfiles() {
   document.querySelector("#modal-title").textContent = "切换档案";
   document.querySelector("#modal-kicker").textContent = "LOCAL PROFILES";
   const backupText = state.lastBackupAt ? `上次备份：${new Date(state.lastBackupAt).toLocaleDateString("zh-CN")}` : "尚未备份，建议每周导出一次";
-  document.querySelector("#modal-content").innerHTML = `<div class="goal-summary"><span><small>当前目标</small><strong>${current.targetWeight} kg · ${current.planWeeks} 周计划</strong></span><button type="button" id="edit-goal">调整</button></div><div class="personal-settings"><button type="button" id="choose-avatar"><span class="personal-preview avatar-preview ${current.avatarData ? "has-image" : ""}" ${current.avatarData ? `style="background-image:url(${current.avatarData})"` : ""}>${current.avatarData ? "" : current.initial}</span><b>更换头像</b><small>方形图片效果最佳</small></button><button type="button" id="choose-dashboard"><span class="personal-preview dashboard-preview ${current.dashboardBackground ? "has-image" : ""}" ${current.dashboardBackground ? `style="background-image:url(${current.dashboardBackground})"` : ""}>▣</span><b>看板背景</b><small>横向图片效果最佳</small></button><input id="avatar-file" type="file" accept="image/*" hidden /><input id="dashboard-file" type="file" accept="image/*" hidden /></div><div class="profile-list">${state.profiles.map((profile) => `<button class="profile-item ${profile.id === state.activeProfile ? "is-current" : ""}" data-profile="${profile.id}"><span class="avatar avatar-${profile.color === "mint" ? "mint" : "coral"} ${profile.avatarData ? "has-image" : ""}" ${profile.avatarData ? `style="background-image:url(${profile.avatarData})"` : ""}>${profile.avatarData ? "" : profile.initial}</span><span><strong>${profile.name}</strong><small>${profile.id === state.activeProfile ? "当前档案" : "本机独立数据"}</small></span><span class="profile-lock">⌑</span></button>`).join("")}</div><button class="primary-button" id="add-profile">＋ 新建本地档案</button><section class="data-tools"><div><b>数据与设备</b><small>${backupText}</small></div><div class="data-tool-grid"><button type="button" id="change-pin">修改访问密码</button><button type="button" id="install-app">安装到手机</button><button type="button" id="export-backup">导出备份</button><button type="button" id="import-backup">恢复备份</button>${isLocalPreview() ? `<button type="button" id="migrate-live">迁移到正式版</button>` : ""}</div><p>备份包含所有档案、记录、头像和背景图，请妥善保管。</p><input id="backup-file" type="file" accept="application/json,.json" hidden /></section>`;
+  const backgrounds = dashboardImages(current);
+  const backgroundPreview = backgrounds[0] || "";
+  document.querySelector("#modal-content").innerHTML = `<div class="goal-summary"><span><small>当前目标</small><strong>${current.targetWeight} kg · ${current.planWeeks} 周计划</strong></span><button type="button" id="edit-goal">调整</button></div><div class="personal-settings"><button type="button" id="choose-avatar"><span class="personal-preview avatar-preview ${current.avatarData ? "has-image" : ""}" ${current.avatarData ? `style="background-image:url(${current.avatarData})"` : ""}>${current.avatarData ? "" : current.initial}</span><b>更换头像</b><small>方形图片效果最佳</small></button><button type="button" id="choose-dashboard"><span class="personal-preview dashboard-preview ${backgroundPreview ? "has-image" : ""}" ${backgroundPreview ? `style="background-image:url(${backgroundPreview})"` : ""}>▣</span><b>背景轮播</b><small>${backgrounds.length ? `已添加 ${backgrounds.length} 张，可继续添加` : "可一次选择多张图片"}</small></button><input id="avatar-file" type="file" accept="image/*" hidden /><input id="dashboard-file" type="file" accept="image/*" multiple hidden /></div>${backgrounds.length ? `<div class="dashboard-library"><span>每 6 秒自动切换，最多保存 6 张</span><button type="button" id="clear-dashboard">清空背景</button></div>` : ""}<div class="profile-list">${state.profiles.map((profile) => `<button class="profile-item ${profile.id === state.activeProfile ? "is-current" : ""}" data-profile="${profile.id}"><span class="avatar avatar-${profile.color === "mint" ? "mint" : "coral"} ${profile.avatarData ? "has-image" : ""}" ${profile.avatarData ? `style="background-image:url(${profile.avatarData})"` : ""}>${profile.avatarData ? "" : profile.initial}</span><span><strong>${profile.name}</strong><small>${profile.id === state.activeProfile ? "当前档案" : "本机独立数据"}</small></span><span class="profile-lock">⌑</span></button>`).join("")}</div><button class="primary-button" id="add-profile">＋ 新建本地档案</button><section class="data-tools"><div><b>数据与设备</b><small>${backupText}</small></div><div class="data-tool-grid"><button type="button" id="change-pin">修改访问密码</button><button type="button" id="install-app">安装到手机</button><button type="button" id="export-backup">导出备份</button><button type="button" id="import-backup">恢复备份</button>${isLocalPreview() ? `<button type="button" id="migrate-live">迁移到正式版</button>` : ""}</div><p>备份包含所有档案、记录、头像和背景图，请妥善保管。</p><input id="backup-file" type="file" accept="application/json,.json" hidden /></section>`;
   modal.hidden = false;
   document.querySelectorAll("[data-profile]").forEach((button) => button.addEventListener("click", () => {
     const selected = state.profiles.find((profile) => profile.id === button.dataset.profile);
@@ -975,10 +1112,21 @@ function openProfiles() {
   });
   document.querySelector("#dashboard-file").addEventListener("change", async (event) => {
     try {
-      current.dashboardBackground = await compressImage(event.target.files[0], 1200, 700, .72);
+      const available = Math.max(0, 6 - dashboardImages(current).length);
+      const files = Array.from(event.target.files || []).slice(0, available);
+      if (!files.length) return showToast(available ? "请选择图片" : "最多保存 6 张背景图");
+      const compressed = await Promise.all(files.map((file) => compressImage(file, 1200, 700, .68)));
+      current.dashboardBackgrounds = [...dashboardImages(current), ...compressed].slice(0, 6);
+      dashboardImageIndex = 0;
       if (!saveState()) return;
-      renderHome(); openProfiles(); showToast("今日看板背景已更新");
+      renderHome(); openProfiles(); showToast(`已添加 ${compressed.length} 张背景图`);
     } catch (error) { showToast(error.message); }
+  });
+  document.querySelector("#clear-dashboard")?.addEventListener("click", () => {
+    if (!window.confirm("确定清空全部看板背景吗？")) return;
+    current.dashboardBackgrounds = [];
+    dashboardImageIndex = 0;
+    saveState(); renderHome(); openProfiles(); showToast("看板背景已清空");
   });
   document.querySelector("#edit-goal").addEventListener("click", openGoalEditor);
   document.querySelector("#add-profile").addEventListener("click", openCreateProfile);
@@ -1062,13 +1210,14 @@ function openPinEditor() {
   });
 }
 
-function openCreateProfile() {
+function openCreateProfile(source = "app") {
+  const fromLock = source === "lock";
   const isFirstProfile = state.profiles.length === 0;
   document.querySelector("#modal-backdrop").hidden = false;
   document.querySelector("#modal-close").hidden = isFirstProfile;
-  document.querySelector("#modal-title").textContent = "新建本地档案";
+  document.querySelector("#modal-title").textContent = fromLock ? "创建新账号" : "新建本地档案";
   document.querySelector("#modal-kicker").textContent = "PRIVATE ON THIS DEVICE";
-  document.querySelector("#modal-content").innerHTML = `<div class="field"><label>昵称</label><input id="profile-name-input" maxlength="8" placeholder="怎么称呼你" /></div><div class="form-row"><div class="field"><label>生理性别</label><select id="profile-sex"><option value="female">女</option><option value="male">男</option></select></div><div class="field"><label>年龄</label><input id="profile-age" inputmode="numeric" placeholder="岁" /></div></div><div class="form-row"><div class="field"><label>身高（cm）</label><input id="profile-height" inputmode="decimal" placeholder="例如 165" /></div><div class="field"><label>活动水平</label><select id="profile-activity">${activityOptions(1.375)}</select></div></div><div class="form-row"><div class="field"><label>当前体重（kg）</label><input id="profile-weight-input" inputmode="decimal" placeholder="例如 65.0" /></div><div class="field"><label>目标体重（kg）</label><input id="profile-target-input" inputmode="decimal" placeholder="例如 58.0" /></div></div><div class="form-row"><div class="field"><label>计划周期（周）</label><input id="profile-weeks-input" inputmode="numeric" placeholder="例如 16" /></div><div class="field"><label>4～6 位 PIN</label><input id="profile-pin-input" inputmode="numeric" maxlength="6" type="password" placeholder="保护隐私" /></div></div><div class="goal-explainer">保存后，饮食、睡眠和体重建议会按照目标速度动态调整。</div><button class="primary-button" id="save-profile">创建并进入档案</button>${isFirstProfile ? `<div class="first-use-restore"><span>已经在旧版本使用过？</span><button class="secondary-button" type="button" id="restore-first-backup">恢复已有备份</button><input id="first-backup-file" type="file" accept="application/json,.json" hidden /></div>` : ""}`;
+  document.querySelector("#modal-content").innerHTML = `${fromLock ? `<div class="goal-explainer">新账号与现有账号完全独立，其他人无法查看；数据和密码只保存在当前设备，不会自动同步到其他手机。</div>` : ""}<div class="field"><label>昵称</label><input id="profile-name-input" maxlength="8" placeholder="怎么称呼你" /></div><div class="form-row"><div class="field"><label>生理性别</label><select id="profile-sex"><option value="female">女</option><option value="male">男</option></select></div><div class="field"><label>年龄</label><input id="profile-age" inputmode="numeric" placeholder="岁" /></div></div><div class="form-row"><div class="field"><label>身高（cm）</label><input id="profile-height" inputmode="decimal" placeholder="例如 165" /></div><div class="field"><label>活动水平</label><select id="profile-activity">${activityOptions(1.375)}</select></div></div><div class="form-row"><div class="field"><label>当前体重（kg）</label><input id="profile-weight-input" inputmode="decimal" placeholder="例如 65.0" /></div><div class="field"><label>目标体重（kg）</label><input id="profile-target-input" inputmode="decimal" placeholder="例如 58.0" /></div></div><div class="form-row"><div class="field"><label>计划周期（周）</label><input id="profile-weeks-input" inputmode="numeric" placeholder="例如 16" /></div><div class="field"><label>4～6 位 PIN</label><input id="profile-pin-input" inputmode="numeric" maxlength="6" type="password" placeholder="保护隐私" /></div></div><div class="goal-explainer">保存后，饮食、睡眠和体重建议会按照目标速度动态调整。</div><button class="primary-button" id="save-profile">创建并进入档案</button>${isFirstProfile ? `<div class="first-use-restore"><span>已经在旧版本使用过？</span><button class="secondary-button" type="button" id="restore-first-backup">恢复已有备份</button><input id="first-backup-file" type="file" accept="application/json,.json" hidden /></div>` : ""}`;
   document.querySelector("#save-profile").addEventListener("click", () => {
     const name = document.querySelector("#profile-name-input").value.trim();
     const sex = document.querySelector("#profile-sex").value;
@@ -1094,7 +1243,15 @@ function openCreateProfile() {
     };
     state.activeProfile = id;
     document.querySelector("#modal-close").hidden = false;
-    saveState(); renderHome(); closeModal(); showToast(`“${name}”档案已创建`);
+    saveState();
+    if (fromLock) {
+      document.querySelector("#app-lock").hidden = true;
+      document.querySelector("#app-shell").hidden = false;
+      currentView = "home";
+    }
+    renderHome(); closeModal();
+    if (fromLock) showAppView("home");
+    showToast(`“${name}”账号已创建`);
   });
   if (isFirstProfile) {
     document.querySelector("#restore-first-backup").addEventListener("click", () => document.querySelector("#first-backup-file").click());
@@ -1120,6 +1277,8 @@ function showAppView(view) {
 
 function showLockScreen() {
   if (!state.profiles.length) return;
+  window.clearInterval(dashboardTimer);
+  dashboardTimer = null;
   const select = document.querySelector("#lock-profile");
   select.innerHTML = state.profiles.map((profile) => `<option value="${profile.id}" ${profile.id === state.activeProfile ? "selected" : ""}>${profile.name}</option>`).join("");
   document.querySelector("#lock-pin").value = "";
@@ -1170,14 +1329,34 @@ document.querySelectorAll("[data-tab]").forEach((button) => button.addEventListe
 document.querySelectorAll("[data-add-record]").forEach((button) => button.addEventListener("click", () => openModal(button.dataset.addRecord)));
 document.querySelectorAll("[data-records-range]").forEach((button) => button.addEventListener("click", () => {
   recordsRange = button.dataset.recordsRange;
+  if (recordsRange === "calendar") {
+    selectedRecordDate = localDateKey();
+    calendarCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  }
   renderRecords();
   window.scrollTo({ top: 0, behavior: "smooth" });
 }));
+document.querySelector("#calendar-prev").addEventListener("click", () => {
+  calendarCursor = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() - 1, 1);
+  selectedRecordDate = localDateKey(new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() + 1, 0));
+  renderCalendar();
+});
+document.querySelector("#calendar-next").addEventListener("click", () => {
+  const next = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() + 1, 1);
+  const current = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  if (next > current) return;
+  calendarCursor = next;
+  selectedRecordDate = calendarCursor.getFullYear() === current.getFullYear() && calendarCursor.getMonth() === current.getMonth()
+    ? localDateKey()
+    : localDateKey(new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() + 1, 0));
+  renderCalendar();
+});
 document.querySelectorAll("[data-trend-range]").forEach((button) => button.addEventListener("click", () => {
   trendRange = Number(button.dataset.trendRange);
   renderTrend();
 }));
 document.querySelector("#unlock-app").addEventListener("click", unlockApp);
+document.querySelector("#create-account").addEventListener("click", () => openCreateProfile("lock"));
 document.querySelector("#lock-pin").addEventListener("keydown", (event) => { if (event.key === "Enter") unlockApp(); });
 window.addEventListener("beforeinstallprompt", (event) => {
   event.preventDefault();

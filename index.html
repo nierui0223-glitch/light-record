@@ -11,7 +11,7 @@
     <title>sherry的掉秤日记</title>
     <link rel="manifest" href="manifest.webmanifest?v=7" />
     <link rel="apple-touch-icon" href="icons/icon-192.png" />
-    <link rel="stylesheet" href="styles.css?v=11" />
+    <link rel="stylesheet" href="styles.css?v=12" />
   </head>
   <body>
     <section class="app-lock" id="app-lock" aria-labelledby="lock-title">
@@ -78,7 +78,7 @@
             <p class="eyebrow">TODAY CHECK-IN</p>
             <h2>今天记一笔</h2>
           </div>
-          <span class="completion" id="completion-label">2 / 4 已完成</span>
+          <span class="completion" id="completion-label">2 / 5 已完成</span>
         </div>
         <div class="quick-grid">
           <button class="quick-card quick-card--weight" data-record="weight">
@@ -99,6 +99,11 @@
           <button class="quick-card quick-card--sleep" data-record="sleep">
             <span class="quick-icon">☾</span>
             <span><b>睡眠</b><small id="sleep-status">7 小时 24 分</small></span>
+            <span class="quick-arrow">→</span>
+          </button>
+          <button class="quick-card quick-card--exercise" data-record="exercise">
+            <span class="quick-icon">↗</span>
+            <span><b>运动</b><small id="exercise-status">待记录</small></span>
             <span class="quick-arrow">→</span>
           </button>
         </div>
@@ -129,7 +134,7 @@
             </div>
           </div>
         </div>
-        <p class="macro-reference">减脂结构参考：碳水 40%～55% · 蛋白质 20%～30% · 脂肪 25%～35%</p>
+        <p class="macro-reference">减脂结构参考：碳水 40%～55% · 蛋白质 20%～30% · 脂肪 25%～35%<br /><span id="nutrition-confidence">营养值会按标准份量和数据来源分级显示</span></p>
         <div class="calorie-plan" id="calorie-plan">
           <div><span>今日建议摄入</span><strong id="calorie-target">待计算</strong></div>
           <div><span>当前剩余额度</span><strong id="calorie-remaining">完善档案</strong></div>
@@ -164,6 +169,7 @@
           <div class="snapshot-card"><span class="snapshot-icon snapshot-icon--mint">◒</span><strong id="weekly-meals">0 / 7</strong><small>饮食有记录</small></div>
           <div class="snapshot-card"><span class="snapshot-icon snapshot-icon--blue">◌</span><strong id="weekly-water">0%</strong><small>饮水完成度</small></div>
           <div class="snapshot-card"><span class="snapshot-icon snapshot-icon--yellow">☾</span><strong id="weekly-sleep">--</strong><small>平均睡眠</small></div>
+          <div class="snapshot-card"><span class="snapshot-icon snapshot-icon--coral">↗</span><strong id="weekly-exercise">0 次</strong><small>运动记录</small></div>
         </div>
       </section>
       </div>
@@ -187,6 +193,7 @@
           <button type="button" data-add-record="meal"><span>◒</span><b>饮食</b></button>
           <button type="button" data-add-record="water"><span>◌</span><b>饮水</b></button>
           <button type="button" data-add-record="sleep"><span>☾</span><b>睡眠</b></button>
+          <button type="button" data-add-record="exercise"><span>↗</span><b>运动</b></button>
         </div>
 
         <section class="record-section">
@@ -204,6 +211,10 @@
         <section class="record-section">
           <div class="record-section-heading"><div><span class="record-type-icon record-type-icon--sleep">☾</span><h3>睡眠</h3></div><button type="button" data-add-record="sleep">修改</button></div>
           <div id="records-sleep"></div>
+        </section>
+        <section class="record-section">
+          <div class="record-section-heading"><div><span class="record-type-icon record-type-icon--exercise">↗</span><h3>运动</h3></div><button type="button" data-add-record="exercise">＋ 添加运动</button></div>
+          <div class="record-list" id="records-exercise"></div>
         </section>
         </div>
 
@@ -301,6 +312,10 @@
             <div class="habit-label"><span><i class="habit-dot habit-dot--yellow"></i>睡眠</span><b id="trend-sleep-note">暂无记录</b></div>
             <div class="habit-bars" id="trend-sleep-bars"></div>
           </div>
+          <div class="habit-row">
+            <div class="habit-label"><span><i class="habit-dot habit-dot--coral"></i>运动</span><b id="trend-exercise-note">暂无记录</b></div>
+            <div class="habit-bars" id="trend-exercise-bars"></div>
+          </div>
           <div class="trend-date-axis"><span id="trend-date-start">--</span><span id="trend-date-middle">--</span><span id="trend-date-end">今天</span></div>
         </section>
 
@@ -327,6 +342,6 @@
     </div>
 
     <div class="toast" id="toast" role="status"></div>
-    <script src="app.js?v=11"></script>
+    <script src="app.js?v=12"></script>
   </body>
 </html>

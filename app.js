@@ -1,6 +1,6 @@
 const STORAGE_KEY = "light-record-prototype-v1";
 const TEST_PROFILE_IDS = new Set(["ning", "family"]);
-const DATA_VERSION = 2;
+const DATA_VERSION = 3;
 const LIVE_APP_URL = "https://nierui0223-glitch.github.io/light-record/";
 const LIVE_APP_ORIGIN = new URL(LIVE_APP_URL).origin;
 let deferredInstallPrompt = null;
@@ -42,7 +42,13 @@ const commonFoods = [
   { id: "milk", name: "牛奶", unit: "250 ml", carbs: 12, protein: 8, fat: 8 },
   { id: "yogurt", name: "酸奶", unit: "1 杯", carbs: 15, protein: 8, fat: 3 },
   { id: "nuts", name: "坚果", unit: "1 小把", carbs: 6, protein: 6, fat: 15 }
-];
+].map((food) => ({
+  ...food,
+  basis: food.unit,
+  source: "中国食物成分表常用值",
+  confidence: "高",
+  calories: Math.round(food.carbs * 4 + food.protein * 4 + food.fat * 9)
+}));
 
 const drinkTypes = [
   { id: "water", name: "白水", icon: "水", counts: true },
@@ -82,7 +88,8 @@ function emptyDailyRecord(weight) {
     waterLogs: [],
     meal: false,
     mealRecords: [],
-    sleep: ""
+    sleep: "",
+    exerciseLogs: []
   };
 }
 
@@ -94,6 +101,7 @@ function normalizeDailyRecord(record, fallbackWeight) {
   normalized.waterGoal = Number(normalized.waterGoal) || 1800;
   normalized.waterLogs = Array.isArray(normalized.waterLogs) ? normalized.waterLogs : [];
   normalized.mealRecords = Array.isArray(normalized.mealRecords) ? normalized.mealRecords : [];
+  normalized.exerciseLogs = Array.isArray(normalized.exerciseLogs) ? normalized.exerciseLogs : [];
   normalized.meal = Boolean(normalized.meal || normalized.mealRecords.length);
   return normalized;
 }
@@ -106,6 +114,7 @@ function normalizeState(candidate) {
   const today = localDateKey();
 
   saved.profiles.forEach((profile) => {
+    profile.favoriteFoods = Array.isArray(profile.favoriteFoods) ? profile.favoriteFoods : [];
     if (!Array.isArray(profile.dashboardBackgrounds)) {
       profile.dashboardBackgrounds = profile.dashboardBackground ? [profile.dashboardBackground] : [];
     }
@@ -181,6 +190,7 @@ function activeRecord() {
   const record = store.days[date];
   record.waterLogs ||= [];
   record.mealRecords ||= [];
+  record.exerciseLogs ||= [];
   const recentWeights = store.weightHistory.slice(-7).map((item) => Number(item.weight)).filter(Boolean);
   record.average = recentWeights.length ? recentWeights.reduce((sum, value) => sum + value, 0) / recentWeights.length : record.weight;
   return record;
@@ -232,8 +242,10 @@ function renderHome() {
   document.querySelector("#weight-delta").textContent = Math.abs(weightDifference) < .05 ? "与均值持平" : `${weightDifference < 0 ? "↓" : "↑"} ${Math.abs(weightDifference).toFixed(1)} kg`;
   document.querySelector("#water-status").textContent = `${record.water} / ${record.waterGoal} ml`;
   document.querySelector("#meal-status").textContent = record.meal ? "今日已记录" : "午餐待记录";
-  const completed = [record.weightRecorded, record.meal, record.water >= record.waterGoal, Boolean(record.sleep)].filter(Boolean).length;
-  document.querySelector("#completion-label").textContent = `${completed} / 4 已完成`;
+  const exerciseCount = record.exerciseLogs?.length || 0;
+  document.querySelector("#exercise-status").textContent = exerciseCount ? `${exerciseCount} 次 · ${exerciseMinutes(record)} 分钟` : "待记录";
+  const completed = [record.weightRecorded, record.meal, record.water >= record.waterGoal, Boolean(record.sleep), exerciseCount > 0].filter(Boolean).length;
+  document.querySelector("#completion-label").textContent = `${completed} / 5 已完成`;
   document.querySelector("#weight-status").textContent = record.weightRecorded ? "已记录" : "待记录";
   document.querySelector("#sleep-status").textContent = record.sleep || "待记录";
   renderTodayNutrition(record, profile);
@@ -297,9 +309,11 @@ function renderWeeklySnapshot() {
     : 0;
   const sleeps = records.map((record) => sleepHours(record.sleep)).filter(Boolean);
   const averageSleep = sleeps.length ? sleeps.reduce((sum, hours) => sum + hours, 0) / sleeps.length : 0;
+  const exerciseCount = records.reduce((sum, record) => sum + (record.exerciseLogs?.length || 0), 0);
   document.querySelector("#weekly-meals").textContent = `${mealDays} / ${eligibleDates.length || 1}`;
   document.querySelector("#weekly-water").textContent = `${waterPercent}%`;
   document.querySelector("#weekly-sleep").textContent = averageSleep ? `${Math.floor(averageSleep)}h ${Math.round((averageSleep % 1) * 60)}m` : "--";
+  document.querySelector("#weekly-exercise").textContent = `${exerciseCount} 次`;
 }
 
 function escapeHtml(value) {
@@ -315,7 +329,7 @@ function recordTime(value) {
 }
 
 function hasDailyData(record) {
-  return Boolean(record && (record.weightRecorded || record.mealRecords?.length || Number(record.water) || record.sleep));
+  return Boolean(record && (record.weightRecorded || record.mealRecords?.length || Number(record.water) || record.sleep || record.exerciseLogs?.length));
 }
 
 function historyDateLabel(dateKey) {
@@ -363,14 +377,16 @@ function renderHistoryRecords() {
       meals.length ? `<span>摄入 <b>${dayCalories} kcal</b></span>` : "",
       record.sleep ? `<span>睡眠 <b>${daySleep.toFixed(1)} h</b></span>` : "",
       Number(record.water) ? `<span>饮水 <b>${Number(record.water)} ml</b></span>` : "",
-      record.weightRecorded ? `<span>体重 <b>${Number(record.weight).toFixed(1)} kg</b></span>` : ""
+      record.weightRecorded ? `<span>体重 <b>${Number(record.weight).toFixed(1)} kg</b></span>` : "",
+      record.exerciseLogs?.length ? `<span>运动 <b>${exerciseMinutes(record)} 分钟</b></span>` : ""
     ].filter(Boolean).join("");
     const mealDetails = meals.length ? meals.map((meal) => {
       const mealSummary = meal.summary || macroSummary(meal.foods || []);
       const foods = (meal.foods || []).map((food) => `${escapeHtml(food.name)} ×${Number(food.quantity || 1)}`).join("、");
       return `<div class="history-meal"><div class="history-meal-head"><strong>${escapeHtml(meal.mealTime || "一餐")}</strong><span>${mealSummary.calories} kcal</span></div><p>${foods || "未保存食物明细"}</p><small>碳水 ${mealSummary.carbsPercent}% · 蛋白质 ${mealSummary.proteinPercent}% · 脂肪 ${mealSummary.fatPercent}%</small></div>`;
     }).join("") : `<p class="history-day-empty">当天没有具体饮食记录</p>`;
-    return `<article class="history-day"><div class="history-day-header"><h3>${historyDateLabel(date)}</h3><span>${date}</span></div><div class="history-day-stats">${dayStats}</div><div class="history-meals">${mealDetails}</div></article>`;
+    const exerciseDetails = record.exerciseLogs?.length ? `<div class="history-exercises">${record.exerciseLogs.map((item) => `<span>${escapeHtml(item.type)} · ${Number(item.duration)} 分钟${item.intensity ? ` · ${escapeHtml(item.intensity)}` : ""}</span>`).join("")}</div>` : "";
+    return `<article class="history-day"><div class="history-day-header"><h3>${historyDateLabel(date)}</h3><span>${date}</span></div><div class="history-day-stats">${dayStats}</div><div class="history-meals">${mealDetails}</div>${exerciseDetails}</article>`;
   }).join("") : `<div class="records-empty">近 30 天还没有可展示的记录</div>`;
 }
 
@@ -391,7 +407,8 @@ function renderCalendarDayDetail(dateKey) {
     record.weightRecorded ? `<div><span>体重</span><strong>${Number(record.weight).toFixed(1)} kg</strong></div>` : "",
     meals.length ? `<div><span>摄入</span><strong>${summary.calories} kcal</strong></div>` : "",
     Number(record.water) ? `<div><span>饮水</span><strong>${Number(record.water)} ml</strong></div>` : "",
-    record.sleep ? `<div><span>睡眠</span><strong>${sleepHours(record.sleep).toFixed(1)} h</strong></div>` : ""
+    record.sleep ? `<div><span>睡眠</span><strong>${sleepHours(record.sleep).toFixed(1)} h</strong></div>` : "",
+    record.exerciseLogs?.length ? `<div><span>运动</span><strong>${exerciseMinutes(record)} 分钟</strong></div>` : ""
   ].filter(Boolean).join("");
   const mealDetails = meals.length ? meals.map((meal) => {
     const mealSummary = meal.summary || macroSummary(meal.foods || []);
@@ -401,7 +418,8 @@ function renderCalendarDayDetail(dateKey) {
   const waterDetails = waterLogs.length
     ? `<div class="calendar-water-list">${waterLogs.map((log) => `<span>${escapeHtml(log.name || "饮品")} ${Number(log.amount)} ml</span>`).join("")}</div>`
     : Number(record.water) ? `<p class="calendar-missing">饮水合计 ${Number(record.water)} ml</p>` : `<p class="calendar-missing">没有饮水记录</p>`;
-  document.querySelector("#calendar-day-content").innerHTML = `<div class="calendar-day-stats">${stats}</div><div class="calendar-detail-section"><h4>饮食</h4>${mealDetails}</div><div class="calendar-detail-section"><h4>饮水</h4>${waterDetails}</div><div class="calendar-detail-section"><h4>睡眠</h4><p class="calendar-missing">${record.sleep ? escapeHtml(record.sleep) : "没有睡眠记录"}</p></div>`;
+  const exerciseDetails = record.exerciseLogs?.length ? record.exerciseLogs.map((item) => `<p class="calendar-missing"><b>${escapeHtml(item.type)}</b> · ${Number(item.duration)} 分钟${item.intensity ? ` · ${escapeHtml(item.intensity)}` : ""}${item.distance ? ` · ${escapeHtml(item.distance)} km` : ""}</p>`).join("") : `<p class="calendar-missing">没有运动记录</p>`;
+  document.querySelector("#calendar-day-content").innerHTML = `<div class="calendar-day-stats">${stats}</div><div class="calendar-detail-section"><h4>饮食</h4>${mealDetails}</div><div class="calendar-detail-section"><h4>饮水</h4>${waterDetails}</div><div class="calendar-detail-section"><h4>睡眠</h4><p class="calendar-missing">${record.sleep ? escapeHtml(record.sleep) : "没有睡眠记录"}</p></div><div class="calendar-detail-section"><h4>运动</h4>${exerciseDetails}</div>`;
 }
 
 function renderCalendar() {
@@ -472,6 +490,9 @@ function renderRecords() {
     ? `<div class="record-simple"><div><span>睡眠时长</span><strong>${escapeHtml(record.sleep)}</strong></div><small>可点击修改重新记录</small></div>`
     : `<div class="records-empty">今天还没有睡眠记录</div>`;
 
+  const exercises = record.exerciseLogs || [];
+  document.querySelector("#records-exercise").innerHTML = exercises.length ? exercises.map((item, index) => `<article class="record-item"><div class="record-item-head"><div><strong>${escapeHtml(item.type)}</strong><span> · ${recordTime(item.createdAt)}</span></div><button class="record-delete" type="button" data-delete-exercise="${index}" aria-label="删除这条运动记录">×</button></div><p class="record-item-main">${Number(item.duration)} 分钟 · ${escapeHtml(item.intensity || "中等强度")}${item.distance ? ` · ${escapeHtml(item.distance)} km` : ""}${item.feeling ? ` · ${escapeHtml(item.feeling)}` : ""}</p><p class="record-item-meta">用于观察活动习惯，不直接增加今日可吃热量</p></article>`).join("") : `<div class="records-empty">今天还没有运动记录</div>`;
+
   document.querySelectorAll("[data-delete-meal]").forEach((button) => button.addEventListener("click", () => {
     if (!window.confirm("确定删除这条饮食记录吗？")) return;
     meals.splice(Number(button.dataset.deleteMeal), 1);
@@ -483,6 +504,11 @@ function renderRecords() {
     const [removed] = waterLogs.splice(Number(button.dataset.deleteWater), 1);
     if (removed?.counts) record.water = Math.max(0, Number(record.water) - Number(removed.amount));
     saveState(); renderHome(); showToast("饮水记录已删除");
+  }));
+  document.querySelectorAll("[data-delete-exercise]").forEach((button) => button.addEventListener("click", () => {
+    if (!window.confirm("确定删除这条运动记录吗？")) return;
+    exercises.splice(Number(button.dataset.deleteExercise), 1);
+    saveState(); renderHome(); showToast("运动记录已删除");
   }));
 }
 
@@ -502,6 +528,10 @@ function shortDate(dateKey) {
 function recordCalories(record) {
   const foods = (record?.mealRecords || []).flatMap((meal) => meal.foods || []);
   return macroSummary(foods).calories;
+}
+
+function exerciseMinutes(record) {
+  return Math.round((record?.exerciseLogs || []).reduce((sum, item) => sum + (Number(item.duration) || 0), 0));
 }
 
 function renderHabitBars(elementId, entries, valueFor, targetFor, type) {
@@ -603,7 +633,13 @@ function renderTrend() {
   document.querySelector("#trend-sleep-note").textContent = sleepDays.length ? `平均 ${averageSleep.toFixed(1)} 小时` : "暂无记录";
   renderHabitBars("#trend-sleep-bars", entries, (entry) => sleepHours(entry.record?.sleep), () => 8, "sleep");
 
-  const trackedDays = entries.filter((entry) => entry.record && (entry.record.weightRecorded || entry.record.mealRecords?.length || Number(entry.record.water) || entry.record.sleep)).length;
+  const exerciseEntries = entries.map((entry) => ({ ...entry, minutes: exerciseMinutes(entry.record) }));
+  const exerciseDays = exerciseEntries.filter((entry) => entry.minutes > 0);
+  const exerciseMinutesTotal = exerciseDays.reduce((sum, entry) => sum + entry.minutes, 0);
+  document.querySelector("#trend-exercise-note").textContent = exerciseDays.length ? `${exerciseDays.length} 天 · ${exerciseMinutesTotal} 分钟` : "暂无记录";
+  renderHabitBars("#trend-exercise-bars", exerciseEntries, (entry) => entry.minutes, () => 30, "exercise");
+
+  const trackedDays = entries.filter((entry) => hasDailyData(entry.record)).length;
   const insight = trendInsight({ trackedDays, weightChange, weightDays: history.length, averageCalories, caloriePlan, waterRate, averageSleep });
   document.querySelector("#trend-insight-title").textContent = insight.title;
   document.querySelector("#trend-insight-body").textContent = insight.body;
@@ -772,7 +808,7 @@ function compressImage(file, width, height, quality = .78) {
 function estimateCustomFood(name) {
   const normalized = name.toLowerCase();
   const matched = commonFoods.find((food) => normalized.includes(food.name.toLowerCase()));
-  if (matched) return { ...matched, id: `custom-${Date.now()}`, name, estimated: true };
+  if (matched) return { ...matched, id: `custom-${Date.now()}`, name, estimated: true, confidence: "中" };
   const rules = [
     { words: ["饭", "粥", "粉", "面", "饼", "馒头", "包子", "土豆", "玉米"], macros: [48, 8, 5] },
     { words: ["鸡", "鸭", "鱼", "虾", "牛", "猪", "肉", "蛋"], macros: [4, 24, 10] },
@@ -782,12 +818,35 @@ function estimateCustomFood(name) {
   ];
   const rule = rules.find((item) => item.words.some((word) => normalized.includes(word)));
   const [carbs, protein, fat] = rule?.macros || [30, 10, 10];
-  return { id: `custom-${Date.now()}`, name, unit: "1 份", carbs, protein, fat, estimated: true };
+  return { id: `custom-${Date.now()}`, name, unit: "1 份", carbs, protein, fat, estimated: true, confidence: "低", source: "按名称分类的粗略估算", basis: "1 份" };
+}
+
+function favoriteFoodKey(food) {
+  return `${food.id}|${food.name}`;
+}
+
+function isFavoriteFood(food) {
+  return (activeProfile()?.favoriteFoods || []).some((item) => favoriteFoodKey(item) === favoriteFoodKey(food));
+}
+
+function toggleFavoriteFood(food) {
+  const profile = activeProfile();
+  profile.favoriteFoods ||= [];
+  const index = profile.favoriteFoods.findIndex((item) => favoriteFoodKey(item) === favoriteFoodKey(food));
+  if (index >= 0) {
+    profile.favoriteFoods.splice(index, 1);
+    showToast("已取消收藏");
+  } else {
+    profile.favoriteFoods.push({ ...food, quantity: undefined });
+    showToast("已收藏，下次可快捷添加");
+  }
+  saveState();
 }
 
 function foodCalories(food) {
   const quantity = Number(food.quantity) || 1;
-  return Math.round((Number(food.carbs || 0) * 4 + Number(food.protein || 0) * 4 + Number(food.fat || 0) * 9) * quantity);
+  const calories = Number(food.calories) || (Number(food.carbs || 0) * 4 + Number(food.protein || 0) * 4 + Number(food.fat || 0) * 9);
+  return Math.round(calories * quantity);
 }
 
 function macroSummary(foods) {
@@ -797,9 +856,16 @@ function macroSummary(foods) {
     fat: sum.fat + Number(food.fat || 0) * (Number(food.quantity) || 1)
   }), { carbs: 0, protein: 0, fat: 0 });
   const energy = { carbs: totals.carbs * 4, protein: totals.protein * 4, fat: totals.fat * 9 };
-  const calories = energy.carbs + energy.protein + energy.fat;
+  const calories = foods.reduce((sum, food) => sum + foodCalories(food), 0);
   const percent = (value) => calories ? Math.round(value / calories * 100) : 0;
   return { totals, calories: Math.round(calories), carbsPercent: percent(energy.carbs), proteinPercent: percent(energy.protein), fatPercent: percent(energy.fat) };
+}
+
+function nutritionConfidence(foods) {
+  const levels = foods.map((food) => food.confidence || (food.estimated ? "低" : "中"));
+  if (levels.includes("低")) return { label: "可信度：低", note: "自定义食物按名称粗略估算；如有包装营养成分表，建议按标签修正。" };
+  if (levels.includes("中")) return { label: "可信度：中", note: "部分食物为相近类别估算，适合观察趋势，不代表实验室检测值。" };
+  return { label: "可信度：高", note: "按标准份量和中国食物成分表常用值换算；烹调油、品牌和实际份量仍可能带来误差。" };
 }
 
 function todayMealRecords(record) {
@@ -852,6 +918,8 @@ function renderTodayNutrition(record, profile) {
   document.querySelector("#daily-protein-bar").style.width = `${summary.proteinPercent}%`;
   document.querySelector("#daily-fat-bar").style.width = `${summary.fatPercent}%`;
   document.querySelector("#nutrition-empty").hidden = meals.length > 0;
+  const confidence = foods.length ? nutritionConfidence(foods) : { label: "营养值会按标准份量和数据来源分级显示", note: "" };
+  document.querySelector("#nutrition-confidence").textContent = foods.length ? `${confidence.label} · ${confidence.note}` : confidence.label;
   setMacroStatus("#daily-carbs-status", macroStatus(summary.carbsPercent, 40, 55, foods.length > 0));
   setMacroStatus("#daily-protein-status", macroStatus(summary.proteinPercent, 20, 30, foods.length > 0));
   setMacroStatus("#daily-fat-status", macroStatus(summary.fatPercent, 25, 35, foods.length > 0));
@@ -900,6 +968,8 @@ function goalAdvice() {
   const averageSleep = sleepEntries.length ? sleepEntries.reduce((sum, value) => sum + value, 0) / sleepEntries.length : 0;
   const waterEntries = entries.filter((entry) => Number(entry.record.water));
   const averageWaterRate = waterEntries.length ? waterEntries.reduce((sum, entry) => sum + Math.min(1.2, Number(entry.record.water) / Number(entry.record.waterGoal || 1800)), 0) / waterEntries.length : 0;
+  const exerciseEntries = entries.filter((entry) => entry.record.exerciseLogs?.length);
+  const exerciseMinutesTotal = exerciseEntries.reduce((sum, entry) => sum + exerciseMinutes(entry.record), 0);
   const weightEntries = (store?.weightHistory || []).filter((entry) => entry.date >= dates[0] && entry.date <= dates.at(-1));
   const weightSpan = weightEntries.length > 1 ? Math.max(1, (new Date(`${weightEntries.at(-1).date}T00:00:00`) - new Date(`${weightEntries[0].date}T00:00:00`)) / 86400000) : 0;
   const actualWeeklyLoss = weightSpan ? (Number(weightEntries[0].weight) - Number(weightEntries.at(-1).weight)) / weightSpan * 7 : null;
@@ -957,6 +1027,9 @@ function goalAdvice() {
   if (hour >= 10 && Number(record.water) < expectedWater * .7) add(74, "饮水进度落后于今天时间", `现在的饮水是 ${Number(record.water)} ml，按当前时间估算，进度低于全天 ${record.waterGoal} ml 目标。分次补水通常比临睡前集中喝更舒服。`, "接下来 1 小时先喝 250～300 ml 白水或无糖茶，之后每 2～3 小时补一次。", "晚餐前达到目标的约 70%，睡前避免集中大量饮水。", "基于：当前时间 · 今日饮水进度");
   else if (waterEntries.length >= 3 && averageWaterRate < .75) add(60, "本周饮水完成度偏低", `近 7 天有 ${waterEntries.length} 天饮水记录，平均只完成约 ${Math.round(averageWaterRate * 100)}%。记录显示这更像持续习惯，而不是单日遗漏。`, "把 600 ml 分到起床后、午餐前和下午三个固定时点。", "下一周让至少 5 天达到目标的 90%。", `基于：近 7 天 ${waterEntries.length} 条饮水记录`);
 
+  if (exerciseEntries.length === 0) add(58, "先安排一段可持续的运动", "当前 7 天还没有运动记录。减脂不需要一开始就追求高强度，规律的快走和基础力量训练更容易长期坚持。", "今天安排 20～30 分钟快走，或完成一次短时力量训练。", "观察第二天的精力、饥饿感和睡眠，不以运动消耗抵扣饮食。", "基于：近 7 天运动记录");
+  else if (exerciseMinutesTotal < 150) add(52, "把本周活动量逐步补到 150 分钟", `近 7 天记录了 ${exerciseEntries.length} 天运动，共 ${exerciseMinutesTotal} 分钟。可以先增加频率，不必一次拉高强度。`, "再安排 2 次 20～30 分钟中等强度活动，间隔至少一天恢复。", "观察膝踝不适、疲劳和睡眠，出现明显不适时先降强度。", "基于：近 7 天运动时长");
+
   if (mealEntries.length < 4) add(42, "先提升记录连续性", `近 7 天只有 ${mealEntries.length} 天保存了具体饮食。数据不足时，体重变化很难和真实摄入对应，建议会更保守。`, "未来 3 天至少完整记录两餐，不必追求克数精确。", "当一周达到 5 天记录后，再判断平均热量与营养结构。", "基于：近 7 天饮食记录完整度");
   else if (weeklyMacros.proteinPercent >= 20 && weeklyMacros.proteinPercent <= 30 && weeklyMacros.fatPercent <= 35 && averageSleep >= 7 && averageWaterRate >= .8) add(50, "这周的基础节奏值得保持", `近 7 天蛋白质约 ${weeklyMacros.proteinPercent}%、脂肪约 ${weeklyMacros.fatPercent}%，睡眠和饮水也基本稳定。此时频繁改计划反而难判断什么真正有效。`, "保持当前餐盘和作息 7 天，只做份量上的小调整。", "以 7 天平均体重、腰围和饥饿感共同判断效果。", "基于：近 7 天饮食 · 睡眠 · 饮水综合记录");
 
@@ -988,12 +1061,14 @@ function renderMealSelection(foods) {
   const list = document.querySelector("#selected-foods");
   const analysis = document.querySelector("#meal-analysis");
   if (!list || !analysis) return;
-  list.innerHTML = foods.length ? foods.map((food, index) => `<div class="selected-food"><span><b>${food.name}</b><small>${food.unit}${food.estimated ? " · 估算" : ""}</small></span><span class="food-stepper"><button type="button" data-food-minus="${index}" aria-label="减少">−</button><b>${food.quantity}</b><button type="button" data-food-plus="${index}" aria-label="增加">＋</button></span><strong>${foodCalories(food)} kcal</strong><button class="remove-food" type="button" data-food-remove="${index}" aria-label="删除">×</button></div>`).join("") : `<div class="empty-selection">从上方选择食物，或输入你吃的具体内容</div>`;
+  list.innerHTML = foods.length ? foods.map((food, index) => `<div class="selected-food"><span><b>${escapeHtml(food.name)}</b><small>${escapeHtml(food.unit || "1 份")}${food.estimated ? " · 估算" : ""} · ${escapeHtml(food.source || "参考值")}</small></span><span class="food-stepper"><button type="button" data-food-minus="${index}" aria-label="减少">−</button><b>${food.quantity}</b><button type="button" data-food-plus="${index}" aria-label="增加">＋</button></span><strong>${foodCalories(food)} kcal</strong><button class="favorite-toggle ${isFavoriteFood(food) ? "is-favorite" : ""}" type="button" data-food-favorite="${index}" aria-label="${isFavoriteFood(food) ? "取消收藏" : "收藏"}">${isFavoriteFood(food) ? "★" : "☆"}</button><button class="remove-food" type="button" data-food-remove="${index}" aria-label="删除">×</button></div>`).join("") : `<div class="empty-selection">从上方选择食物，或输入你吃的具体内容</div>`;
   const summary = macroSummary(foods);
-  analysis.innerHTML = foods.length ? `<div class="analysis-head"><span>本餐供能估算</span><strong>${summary.calories} kcal</strong></div><div class="macro-bar"><i style="width:${summary.carbsPercent}%"></i><i style="width:${summary.proteinPercent}%"></i><i style="width:${summary.fatPercent}%"></i></div><div class="macro-legend"><span><i class="dot dot-carbs"></i>碳水 ${summary.carbsPercent}%</span><span><i class="dot dot-protein"></i>蛋白质 ${summary.proteinPercent}%</span><span><i class="dot dot-fat"></i>脂肪 ${summary.fatPercent}%</span></div><p>按所选份量估算，仅用于观察饮食结构。</p>` : "";
+  const confidence = foods.length ? nutritionConfidence(foods) : null;
+  analysis.innerHTML = foods.length ? `<div class="analysis-head"><span>本餐供能估算</span><strong>${summary.calories} kcal</strong></div><div class="macro-bar"><i style="width:${summary.carbsPercent}%"></i><i style="width:${summary.proteinPercent}%"></i><i style="width:${summary.fatPercent}%"></i></div><div class="macro-legend"><span><i class="dot dot-carbs"></i>碳水 ${summary.carbsPercent}%</span><span><i class="dot dot-protein"></i>蛋白质 ${summary.proteinPercent}%</span><span><i class="dot dot-fat"></i>脂肪 ${summary.fatPercent}%</span></div><p class="nutrition-confidence">${confidence.label} · ${confidence.note}</p>` : "";
   list.querySelectorAll("[data-food-minus]").forEach((button) => button.addEventListener("click", () => { const food = foods[Number(button.dataset.foodMinus)]; food.quantity = Math.max(.5, food.quantity - .5); renderMealSelection(foods); }));
   list.querySelectorAll("[data-food-plus]").forEach((button) => button.addEventListener("click", () => { foods[Number(button.dataset.foodPlus)].quantity += .5; renderMealSelection(foods); }));
   list.querySelectorAll("[data-food-remove]").forEach((button) => button.addEventListener("click", () => { foods.splice(Number(button.dataset.foodRemove), 1); renderMealSelection(foods); }));
+  list.querySelectorAll("[data-food-favorite]").forEach((button) => button.addEventListener("click", () => { toggleFavoriteFood(foods[Number(button.dataset.foodFavorite)]); renderMealSelection(foods); }));
 }
 
 function openModal(type) {
@@ -1053,10 +1128,20 @@ function openModal(type) {
   if (type === "meal") {
     title.textContent = "记录一餐";
     const selectedFoods = [];
-    content.innerHTML = `<div class="field"><label>餐次</label><select id="meal-time"><option>早餐</option><option selected>午餐</option><option>晚餐</option><option>加餐</option></select></div><div class="field"><label>常见食物 · 点击添加一份</label><div class="food-grid">${commonFoods.map((food) => `<button class="food-choice" type="button" data-food="${food.id}"><b>${food.name}</b><small>${food.unit}</small></button>`).join("")}</div></div><div class="field"><label>没有找到？直接输入食物名称</label><div class="custom-food-row"><input id="custom-food-input" placeholder="例如：番茄牛肉盖饭" /><button type="button" id="add-custom-food">添加</button></div></div><div class="field"><label>本餐已选</label><div id="selected-foods"></div></div><div class="meal-analysis" id="meal-analysis"></div><button class="primary-button" id="save-meal">保存本餐</button>`;
+    const favorites = activeProfile()?.favoriteFoods || [];
+    const favoriteSection = favorites.length ? `<div class="field favorite-food-section"><label>我的常用 · 点击快捷添加</label><div class="food-grid">${favorites.map((food) => `<button class="food-choice favorite-choice" type="button" data-favorite-food="${escapeHtml(favoriteFoodKey(food))}"><b>${escapeHtml(food.name)}</b><small>${escapeHtml(food.unit || "1 份")} · ★</small></button>`).join("")}</div></div>` : `<div class="favorite-empty">选中食物后点 ☆ 收藏，下次就能在这里快捷添加。</div>`;
+    content.innerHTML = `<div class="field"><label>餐次</label><select id="meal-time"><option>早餐</option><option selected>午餐</option><option>晚餐</option><option>加餐</option></select></div>${favoriteSection}<div class="field"><label>常见食物 · 点击添加一份</label><div class="food-grid">${commonFoods.map((food) => `<button class="food-choice" type="button" data-food="${food.id}"><b>${food.name}</b><small>${food.unit} · ${foodCalories(food)} kcal</small></button>`).join("")}</div></div><div class="field"><label>没有找到？直接输入食物名称</label><div class="custom-food-row"><input id="custom-food-input" placeholder="例如：番茄牛肉盖饭" /><button type="button" id="add-custom-food">添加</button></div><details class="custom-food-details"><summary>有营养标签？输入后更准确</summary><div class="form-row"><input id="custom-food-calories" inputmode="decimal" placeholder="热量 kcal" /><input id="custom-food-carbs" inputmode="decimal" placeholder="碳水 g" /></div><div class="form-row"><input id="custom-food-protein" inputmode="decimal" placeholder="蛋白质 g" /><input id="custom-food-fat" inputmode="decimal" placeholder="脂肪 g" /></div><small>按包装标签填写一份的数值，四项需同时填写。</small></details></div><div class="field"><label>本餐已选</label><div id="selected-foods"></div></div><div class="meal-analysis" id="meal-analysis"></div><button class="primary-button" id="save-meal">保存本餐</button>`;
     document.querySelectorAll("[data-food]").forEach((button) => button.addEventListener("click", () => {
       const food = commonFoods.find((item) => item.id === button.dataset.food);
       const existing = selectedFoods.find((item) => item.id === food.id);
+      if (existing) existing.quantity += 1;
+      else selectedFoods.push({ ...food, quantity: 1 });
+      renderMealSelection(selectedFoods);
+    }));
+    document.querySelectorAll("[data-favorite-food]").forEach((button) => button.addEventListener("click", () => {
+      const food = favorites.find((item) => favoriteFoodKey(item) === button.dataset.favoriteFood);
+      if (!food) return;
+      const existing = selectedFoods.find((item) => item.id === food.id && item.name === food.name);
       if (existing) existing.quantity += 1;
       else selectedFoods.push({ ...food, quantity: 1 });
       renderMealSelection(selectedFoods);
@@ -1065,8 +1150,18 @@ function openModal(type) {
       const input = document.querySelector("#custom-food-input");
       const name = input.value.trim();
       if (!name) return showToast("请输入食物名称");
-      selectedFoods.push({ ...estimateCustomFood(name), quantity: 1 });
+      const nutritionInputs = ["calories", "carbs", "protein", "fat"].map((id) => document.querySelector(`#custom-food-${id}`).value.trim());
+      const nutrition = nutritionInputs.map(Number);
+      const filledNutrition = nutritionInputs.filter(Boolean).length;
+      const hasNutrition = filledNutrition === 4;
+      if (filledNutrition > 0 && filledNutrition < 4) return showToast("营养标签四项需要同时填写");
+      if (hasNutrition && nutrition.some((value) => !Number.isFinite(value) || value < 0)) return showToast("营养标签四项需要填写正确数字");
+      const customFood = hasNutrition
+        ? { id: `label-${Date.now()}`, name, unit: "1 份", calories: nutrition[0], carbs: nutrition[1], protein: nutrition[2], fat: nutrition[3], source: "用户输入的包装营养标签", confidence: "高" }
+        : estimateCustomFood(name);
+      selectedFoods.push({ ...customFood, quantity: 1 });
       input.value = "";
+      ["calories", "carbs", "protein", "fat"].forEach((id) => { document.querySelector(`#custom-food-${id}`).value = ""; });
       renderMealSelection(selectedFoods);
     });
     renderMealSelection(selectedFoods);
@@ -1087,6 +1182,21 @@ function openModal(type) {
       if (!start || !end) return showToast("请填写入睡和起床时间");
       record.sleep = sleepDuration(start, end);
       saveState(); renderHome(); closeModal(); showToast("睡眠已记录，建议已更新");
+    });
+  }
+  if (type === "exercise") {
+    title.textContent = "记录运动";
+    content.innerHTML = `<div class="field"><label>运动类型</label><select id="exercise-type"><option>快走</option><option>跑步</option><option>骑行</option><option>力量训练</option><option>游泳</option><option>瑜伽</option><option>其他运动</option></select></div><div class="form-row"><div class="field"><label>运动时长（分钟）</label><input id="exercise-duration" inputmode="numeric" value="30" /></div><div class="field"><label>强度</label><select id="exercise-intensity"><option>轻度</option><option selected>中等</option><option>高强度</option></select></div></div><div class="form-row"><div class="field"><label>距离（可选，km）</label><input id="exercise-distance" inputmode="decimal" placeholder="例如 3.5" /></div><div class="field"><label>身体感受</label><select id="exercise-feeling"><option>轻松</option><option selected>刚好</option><option>吃力</option></select></div></div><div class="drink-note">运动记录用于观察习惯和恢复，不会直接把运动消耗换算成额外可吃热量，避免高估消耗。</div><button class="primary-button" id="save-exercise">保存运动</button>`;
+    document.querySelector("#save-exercise").addEventListener("click", () => {
+      const type = document.querySelector("#exercise-type").value;
+      const duration = Number(document.querySelector("#exercise-duration").value);
+      const intensity = document.querySelector("#exercise-intensity").value;
+      const distance = document.querySelector("#exercise-distance").value.trim();
+      const feeling = document.querySelector("#exercise-feeling").value;
+      if (!duration || duration < 5 || duration > 600) return showToast("运动时长请输入 5～600 分钟");
+      if (distance && (!Number(distance) || Number(distance) < 0)) return showToast("距离请输入正确数字");
+      record.exerciseLogs.push({ type, duration, intensity, distance, feeling, createdAt: new Date().toISOString() });
+      saveState(); renderHome(); closeModal(); showToast(`${type}已记录`);
     });
   }
 }
